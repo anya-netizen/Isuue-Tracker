@@ -1852,7 +1852,6 @@ Agent: I completely understand. Prescription issues are critical. Let me first a
 
 Dr. Williams: So they went to the wrong queue?
 Agent: Unfortunately, yes. That's our error, not yours. Let me immediately escalate all three tickets and get them to the right teams. But more importantly, I'm going to set up your practice account with priority routing so this doesn't happen again.
-
 Dr. Williams: That would be appreciated.
 
 Agent: I'm also going to have a senior support manager call you tomorrow to review these tickets and make sure we've resolved everything. And I want to personally follow up on each of these today. Can you spare a few minutes now so I can get the details on ticket 056 since it's still open?
