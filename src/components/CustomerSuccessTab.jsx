@@ -748,8 +748,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     return regionTypeFilter !== 'all' || 
            regionNameFilter !== 'all' || 
            categoryFilter !== 'all' || 
-           channelFilter !== 'all' || 
-           statusFilter !== 'all';
+           channelFilter !== 'all';
   };
 
   // Clear all advanced filters
@@ -758,7 +757,6 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     setRegionNameFilter('all');
     setCategoryFilter('all');
     setChannelFilter('all');
-    setStatusFilter('all');
     setPriorityFilter('all');
   };
 
@@ -1878,8 +1876,16 @@ Dr. Williams: Thank you. That helps.
     const allIssues = getAllIssues();
     const filteredIssues = applyAdvancedFilters(allIssues);
     
-    // Calculate total, solved, unsolved from filtered issues
+    // Calculate total issues
     const totalIssues = filteredIssues.length;
+    
+    // Calculate status-based counts from filtered issues
+    const newIssues = filteredIssues.filter(issue => issue.workflowStatus === 'new').length;
+    const analyzedIssues = filteredIssues.filter(issue => issue.workflowStatus === 'analyzed').length;
+    const catalyzedIssues = filteredIssues.filter(issue => issue.workflowStatus === 'catalyzed').length;
+    const resolvedIssues = filteredIssues.filter(issue => issue.workflowStatus === 'resolved').length;
+    
+    // Keep old counts for backward compatibility
     const solvedIssues = filteredIssues.filter(issue => issue.status === 'solved').length;
     const unsolvedIssues = filteredIssues.filter(issue => issue.status === 'unsolved').length;
     
@@ -1901,6 +1907,10 @@ Dr. Williams: Thank you. That helps.
     
     return {
       totalIssues,
+      newIssues,
+      analyzedIssues,
+      catalyzedIssues,
+      resolvedIssues,
       solvedIssues,
       unsolvedIssues,
       highPriority,
@@ -2410,43 +2420,74 @@ Dr. Williams: Thank you. That helps.
 
           {/* Issue Statistics & Priority Filter */}
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
-            {/* Summary Statistics Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 flex-1">
+            {/* Status Filter Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 flex-1">
+              {/* All Status */}
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                className={`text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  priorityFilter === 'all' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
+                className={`text-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'all' ? 'border-gray-600 ring-2 ring-gray-300' : 'border-gray-200'
                 }`}
-                onClick={() => setPriorityFilter('all')}
+                onClick={() => setStatusFilter('all')}
               >
-                <div className="text-2xl font-bold text-blue-800">{issueStatistics.totalIssues}</div>
-                <div className="text-sm text-blue-600 font-medium">Total Issues</div>
+                <div className="text-2xl font-bold text-gray-800">{issueStatistics.totalIssues}</div>
+                <div className="text-sm text-gray-600 font-medium">All</div>
               </motion.div>
+              
+              {/* New Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'new' ? 'border-yellow-600 ring-2 ring-yellow-300' : 'border-yellow-200'
+                }`}
+                onClick={() => {
+                  setStatusFilter('new');
+                  setUnsolvedModalOpen(true);
+                }}
+              >
+                <div className="text-2xl font-bold text-yellow-800">{issueStatistics.newIssues}</div>
+                <div className="text-sm text-yellow-600 font-medium">New</div>
+              </motion.div>
+              
+              {/* Analyzed Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'analyzed' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
+                }`}
+                onClick={() => setStatusFilter('analyzed')}
+              >
+                <div className="text-2xl font-bold text-blue-800">{issueStatistics.analyzedIssues}</div>
+                <div className="text-sm text-blue-600 font-medium">Analyzed</div>
+              </motion.div>
+              
+              {/* Catalyzed Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'catalyzed' ? 'border-purple-600 ring-2 ring-purple-300' : 'border-purple-200'
+                }`}
+                onClick={() => setStatusFilter('catalyzed')}
+              >
+                <div className="text-2xl font-bold text-purple-800">{issueStatistics.catalyzedIssues}</div>
+                <div className="text-sm text-purple-600 font-medium">Catalyzed</div>
+              </motion.div>
+              
+              {/* Resolved Status */}
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className={`text-center p-4 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  priorityFilter === 'solved' ? 'border-green-600 ring-2 ring-green-300' : 'border-green-200'
+                  statusFilter === 'resolved' ? 'border-green-600 ring-2 ring-green-300' : 'border-green-200'
                 }`}
-                onClick={() => setPriorityFilter('solved')}
+                onClick={() => setStatusFilter('resolved')}
               >
-                <div className="text-2xl font-bold text-green-800">{issueStatistics.solvedIssues}</div>
-                <div className="text-sm text-green-600 font-medium">Solved</div>
-              </motion.div>
-              <motion.div 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className={`text-center p-4 bg-gradient-to-br from-red-50 to-rose-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  priorityFilter === 'unsolved' ? 'border-red-600 ring-2 ring-red-300' : 'border-red-200'
-                }`}
-                onClick={() => {
-                  setPriorityFilter('unsolved');
-                  setUnsolvedModalOpen(true);
-                }}
-              >
-              <div className="text-2xl font-bold text-red-800">{issueStatistics.unsolvedIssues}</div>
-                <div className="text-sm text-red-600 font-medium">Unsolved</div>
+                <div className="text-2xl font-bold text-green-800">{issueStatistics.resolvedIssues}</div>
+                <div className="text-sm text-green-600 font-medium">Resolved</div>
               </motion.div>
             </div>
 
@@ -2490,7 +2531,7 @@ Dr. Williams: Thank you. That helps.
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Region Type Filter */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2563,24 +2604,6 @@ Dr. Williams: Thank you. That helps.
                   <option value="call">Call</option>
                 </select>
               </div>
-
-              {/* Status Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="new">New</option>
-                  <option value="analyzed">Analyzed</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="catalyzed">Catalyzed</option>
-                </select>
-              </div>
             </div>
 
             {/* Active Filters Indicator */}
@@ -2605,11 +2628,6 @@ Dr. Williams: Thank you. That helps.
                 {channelFilter !== 'all' && (
                   <Badge className="bg-indigo-100 text-indigo-800">
                     Channel: {channelFilter}
-                  </Badge>
-                )}
-                {statusFilter !== 'all' && (
-                  <Badge className="bg-indigo-100 text-indigo-800">
-                    Status: {statusFilter}
                   </Badge>
                 )}
               </div>
@@ -5873,13 +5891,13 @@ Dr. Williams: Thank you. That helps.
         <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-r from-red-500 to-rose-600 rounded-lg flex items-center justify-center">
+              <div className="w-12 h-12 bg-gradient-to-r from-yellow-500 to-amber-600 rounded-lg flex items-center justify-center">
                 <AlertTriangle className="w-7 h-7 text-white" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-gray-900">Unsolved Issues Management</div>
+                <div className="text-2xl font-bold text-gray-900">New Issues Categorization</div>
                 <div className="text-sm font-normal text-gray-500 mt-1">
-                  Categorize and prioritize unresolved issues
+                  Categorize and prioritize new issues
                 </div>
               </div>
             </DialogTitle>
@@ -5888,18 +5906,18 @@ Dr. Williams: Thank you. That helps.
           <div className="space-y-4 mt-6">
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <Card className="bg-gradient-to-br from-red-50 to-rose-50 border-red-200">
+              <Card className="bg-gradient-to-br from-yellow-50 to-amber-50 border-yellow-200">
                 <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-red-800">{getAllUnsolvedIssues().length}</div>
-                  <div className="text-sm text-red-600 font-medium">Total Unsolved</div>
+                  <div className="text-3xl font-bold text-yellow-800">{getAllUnsolvedIssues().length}</div>
+                  <div className="text-sm text-yellow-600 font-medium">Total New Issues</div>
                 </CardContent>
               </Card>
-              <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200">
+              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
                 <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-orange-800">
+                  <div className="text-3xl font-bold text-green-800">
                     {Object.keys(issueCategorizationData).length}
                   </div>
-                  <div className="text-sm text-orange-600 font-medium">Categorized</div>
+                  <div className="text-sm text-green-600 font-medium">Categorized</div>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
