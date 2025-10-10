@@ -673,8 +673,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
 
   // Region Hierarchy Data
   const regionHierarchy = {
-    division: ["East", "East Central", "West", "Central"],
-    divisionalGroup: [
+    division: [
       "Pacific Northwest Division",
       "Bay Area Central CA Division",
       "LA CSA Division",
@@ -696,6 +695,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       "NEMA Divisional Group 2",
       "NEMA Divisional Group 1"
     ],
+    divisionalGroup: ["East", "East Central", "West", "Central"],
     msa: ["New York City", "Los Angeles", "Chicago", "Dallas", "Atlanta", "Seattle", "Denver", "Boston"],
     gsa: ["Coastal Belt GSA", "Midwest GSA", "Southern Corridor GSA", "Mountain Ridge GSA", "Great Lakes GSA"]
   };
