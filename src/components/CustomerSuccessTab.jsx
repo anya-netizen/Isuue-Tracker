@@ -640,7 +640,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     const allIssues = [];
     Object.entries(issueCategories).forEach(([categoryKey, category]) => {
       category.issues.forEach(issue => {
-        if (issue.status === 'unsolved') {
+        if (issue.workflowStatus === 'New') {
           allIssues.push({
             ...issue,
             categoryName: category.name,
@@ -716,13 +716,14 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     return issues.filter(issue => {
       // Priority filter
       if (priorityFilter !== 'all') {
-        if (priorityFilter === 'solved' && issue.status !== 'solved') return false;
-        if (priorityFilter === 'unsolved' && issue.status === 'solved') return false;
         if (['critical', 'high', 'medium', 'low'].includes(priorityFilter)) {
           const dynamicPriority = calculateDynamicPriority(issue);
           if (dynamicPriority.currentPriority !== priorityFilter) return false;
         }
       }
+
+      // Status filter (workflow status) - from top cards
+      if (statusFilter !== 'all' && issue.workflowStatus !== statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)) return false;
 
       // Region Type filter
       if (regionTypeFilter !== 'all' && issue.regionType !== regionTypeFilter) return false;
@@ -736,9 +737,6 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       // Channel filter
       if (channelFilter !== 'all' && issue.channel !== channelFilter) return false;
 
-      // Status filter
-      if (statusFilter !== 'all' && issue.workflowStatus !== statusFilter) return false;
-
       return true;
     });
   };
@@ -748,8 +746,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     return regionTypeFilter !== 'all' || 
            regionNameFilter !== 'all' || 
            categoryFilter !== 'all' || 
-           channelFilter !== 'all' || 
-           statusFilter !== 'all';
+           channelFilter !== 'all';
   };
 
   // Clear all advanced filters
@@ -758,7 +755,6 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     setRegionNameFilter('all');
     setCategoryFilter('all');
     setChannelFilter('all');
-    setStatusFilter('all');
     setPriorityFilter('all');
   };
 
@@ -1307,16 +1303,6 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   ];
 
   // Issue Categorization System Data
-  const issueStatistics = {
-    totalIssues: 89,
-    solvedIssues: 67,
-    unsolvedIssues: 22,
-    highPriority: 12,
-    mediumPriority: 31,
-    lowPriority: 46,
-    criticalPriority: 8
-  };
-
   const issueCategories = {
     technical: {
       name: 'Technical',
@@ -1872,6 +1858,25 @@ Dr. Williams: Thank you. That helps.
     }
   };
 
+  // Calculate dynamic issue counts for each category
+  Object.keys(issueCategories).forEach(key => {
+    issueCategories[key].count = issueCategories[key].issues.length;
+  });
+
+  // Calculate issue statistics dynamically based on status
+  const allIssuesArray = Object.values(issueCategories).flatMap(cat => cat.issues);
+  const issueStatistics = {
+    totalIssues: allIssuesArray.length,
+    newIssues: allIssuesArray.filter(i => i.workflowStatus === 'New').length,
+    analyzedIssues: allIssuesArray.filter(i => i.workflowStatus === 'Analyzed').length,
+    resolvedIssues: allIssuesArray.filter(i => i.workflowStatus === 'Resolved').length,
+    catalyzedIssues: allIssuesArray.filter(i => i.workflowStatus === 'Catalyzed').length,
+    highPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'high').length,
+    mediumPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'medium').length,
+    lowPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'low').length,
+    criticalPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'critical').length
+  };
+
   // Persona data for detailed profiles
   const personaData = {
     'sarah-johnson': {
@@ -2367,43 +2372,74 @@ Dr. Williams: Thank you. That helps.
 
           {/* Issue Statistics & Priority Filter */}
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
-            {/* Summary Statistics Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 flex-1">
+            {/* Summary Statistics Cards - Status Based */}
+            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 flex-1">
+              {/* All Status Card */}
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className={`text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  priorityFilter === 'all' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
+                  statusFilter === 'all' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
                 }`}
-                onClick={() => setPriorityFilter('all')}
+                onClick={() => setStatusFilter('all')}
               >
                 <div className="text-2xl font-bold text-blue-800">{issueStatistics.totalIssues}</div>
-                <div className="text-sm text-blue-600 font-medium">Total Issues</div>
+                <div className="text-sm text-blue-600 font-medium">All</div>
               </motion.div>
+
+              {/* New Status Card - Opens Categorization Modal */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-orange-50 to-amber-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'new' ? 'border-orange-600 ring-2 ring-orange-300' : 'border-orange-200'
+                }`}
+                onClick={() => {
+                  setStatusFilter('new');
+                  setUnsolvedModalOpen(true);
+                }}
+              >
+                <div className="text-2xl font-bold text-orange-800">{issueStatistics.newIssues}</div>
+                <div className="text-sm text-orange-600 font-medium">New</div>
+              </motion.div>
+
+              {/* Analyzed Status Card */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-purple-50 to-violet-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'analyzed' ? 'border-purple-600 ring-2 ring-purple-300' : 'border-purple-200'
+                }`}
+                onClick={() => setStatusFilter('analyzed')}
+              >
+                <div className="text-2xl font-bold text-purple-800">{issueStatistics.analyzedIssues}</div>
+                <div className="text-sm text-purple-600 font-medium">Analyzed</div>
+              </motion.div>
+
+              {/* Catalyzed Status Card */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-yellow-50 to-amber-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'catalyzed' ? 'border-yellow-600 ring-2 ring-yellow-300' : 'border-yellow-200'
+                }`}
+                onClick={() => setStatusFilter('catalyzed')}
+              >
+                <div className="text-2xl font-bold text-yellow-800">{issueStatistics.catalyzedIssues}</div>
+                <div className="text-sm text-yellow-600 font-medium">Catalyzed</div>
+              </motion.div>
+
+              {/* Resolved Status Card */}
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className={`text-center p-4 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  priorityFilter === 'solved' ? 'border-green-600 ring-2 ring-green-300' : 'border-green-200'
+                  statusFilter === 'resolved' ? 'border-green-600 ring-2 ring-green-300' : 'border-green-200'
                 }`}
-                onClick={() => setPriorityFilter('solved')}
+                onClick={() => setStatusFilter('resolved')}
               >
-                <div className="text-2xl font-bold text-green-800">{issueStatistics.solvedIssues}</div>
-                <div className="text-sm text-green-600 font-medium">Solved</div>
-              </motion.div>
-              <motion.div 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className={`text-center p-4 bg-gradient-to-br from-red-50 to-rose-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  priorityFilter === 'unsolved' ? 'border-red-600 ring-2 ring-red-300' : 'border-red-200'
-                }`}
-                onClick={() => {
-                  setPriorityFilter('unsolved');
-                  setUnsolvedModalOpen(true);
-                }}
-              >
-                <div className="text-2xl font-bold text-red-800">{issueStatistics.unsolvedIssues}</div>
-                <div className="text-sm text-red-600 font-medium">Unsolved</div>
+                <div className="text-2xl font-bold text-green-800">{issueStatistics.resolvedIssues}</div>
+                <div className="text-sm text-green-600 font-medium">Resolved</div>
               </motion.div>
             </div>
 
@@ -2447,7 +2483,7 @@ Dr. Williams: Thank you. That helps.
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               {/* Region Type Filter */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2518,24 +2554,6 @@ Dr. Williams: Thank you. That helps.
                   <option value="email">Email</option>
                   <option value="ticket">Ticket</option>
                   <option value="call">Call</option>
-                </select>
-              </div>
-
-              {/* Status Filter */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Status
-                </label>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm"
-                >
-                  <option value="all">All Statuses</option>
-                  <option value="new">New</option>
-                  <option value="analyzed">Analyzed</option>
-                  <option value="resolved">Resolved</option>
-                  <option value="catalyzed">Catalyzed</option>
                 </select>
               </div>
             </div>
@@ -5834,9 +5852,9 @@ Dr. Williams: Thank you. That helps.
                 <AlertTriangle className="w-7 h-7 text-white" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-gray-900">Unsolved Issues Management</div>
+                <div className="text-2xl font-bold text-gray-900">New Issues Categorization</div>
                 <div className="text-sm font-normal text-gray-500 mt-1">
-                  Categorize and prioritize unresolved issues
+                  Categorize and prioritize new issues
                 </div>
               </div>
             </DialogTitle>
@@ -5845,18 +5863,18 @@ Dr. Williams: Thank you. That helps.
           <div className="space-y-4 mt-6">
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <Card className="bg-gradient-to-br from-red-50 to-rose-50 border-red-200">
-                <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-red-800">{getAllUnsolvedIssues().length}</div>
-                  <div className="text-sm text-red-600 font-medium">Total Unsolved</div>
-                </CardContent>
-              </Card>
               <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200">
                 <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-orange-800">
+                  <div className="text-3xl font-bold text-orange-800">{getAllUnsolvedIssues().length}</div>
+                  <div className="text-sm text-orange-600 font-medium">Total New</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+                <CardContent className="p-4 text-center">
+                  <div className="text-3xl font-bold text-green-800">
                     {Object.keys(issueCategorizationData).length}
                   </div>
-                  <div className="text-sm text-orange-600 font-medium">Categorized</div>
+                  <div className="text-sm text-green-600 font-medium">Categorized</div>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
@@ -5879,7 +5897,7 @@ Dr. Williams: Thank you. That helps.
                   <div>
                     <h4 className="font-semibold text-indigo-900 mb-2">Categorization Instructions</h4>
                     <p className="text-sm text-indigo-800 mb-2">
-                      For each unsolved issue, please:
+                      For each new issue, please:
                     </p>
                     <ol className="text-sm text-indigo-700 space-y-1 ml-5 list-decimal">
                       <li>Select the appropriate <strong>Issue Type</strong> from the dropdown</li>
