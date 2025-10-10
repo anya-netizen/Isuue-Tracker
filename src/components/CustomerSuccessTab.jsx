@@ -950,7 +950,6 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       { id: 5, category: 'Cost Savings', description: 'Reduced operational costs by 15%', impact: 'Medium', date: '2024-01-11' }
     ]
   };
-
   // Stats data for sub-nodes
   const statsData = {
     patient: {
@@ -1122,7 +1121,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       { id: 'g182001', name: 'HARRIS, PATRICIA', mrn: 'G182001', diagnosis: 'Medical Social Services', status: 'Completed', amount: '$120' },
       { id: 'g182002', name: 'MARTIN, MICHAEL', mrn: 'G182002', diagnosis: 'Medical Social Services', status: 'Completed', amount: '$120' },
       { id: 'g182003', name: 'GARCIA, MARIA', mrn: 'G182003', diagnosis: 'Medical Social Services', status: 'Completed', amount: '$120' },
-      { id: 'g182004', name: 'MARTINEZ, CARLOS', mrn: 'G182004', diagnosis: 'Medical Social Services', status: 'Completed', amount: '$120' }
+      { id: 'g182004', name: 'MARTINEZ, CARMEN', mrn: 'G182004', diagnosis: 'Medical Social Services', status: 'Completed', amount: '$120' }
     ],
     'G0179': [
       { id: 'g179001', name: 'ROBINSON, JENNIFER', mrn: 'G179001', diagnosis: 'Home Health Aide Services', status: 'Completed', amount: '$40' },
@@ -1852,7 +1851,6 @@ Dr. Williams: Exactly. We can't wait that long when we're dealing with patient c
 Agent: I completely understand. Prescription issues are critical. Let me first address what happened, then we'll fix the open issues. It looks like these tickets were incorrectly categorized as "general inquiries" instead of "urgent clinical operations."
 
 Dr. Williams: So they went to the wrong queue?
-
 Agent: Unfortunately, yes. That's our error, not yours. Let me immediately escalate all three tickets and get them to the right teams. But more importantly, I'm going to set up your practice account with priority routing so this doesn't happen again.
 
 Dr. Williams: That would be appreciated.
@@ -5601,86 +5599,6 @@ Dr. Williams: Thank you. That helps.
                             }`}
                           >
                             {claim.status}
-                          </Badge>
-                          <Button size="sm" variant="outline">
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </Button>
-                        </div>
-                      </div>
-                    </Card>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Admin Efficiency List Modal */}
-      <Dialog open={adminListModalOpen} onOpenChange={setAdminListModalOpen}>
-        <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Target className="w-6 h-6 text-purple-600" />
-              {selectedAdminType} - Admin Efficiency List
-            </DialogTitle>
-            <DialogDescription>
-              Complete list of {selectedAdminType?.toLowerCase()} with detailed information
-            </DialogDescription>
-          </DialogHeader>
-          
-          {selectedAdminType && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <Badge variant="outline" className="text-purple-700 bg-purple-50">
-                  Total: {getAdminCount(selectedAdminType)} {selectedAdminType}
-                </Badge>
-                <Button size="sm" className="flex items-center gap-2">
-                  <Download className="w-4 h-4" />
-                  Export List
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4">
-                {getAdminList(selectedAdminType).map((item, index) => (
-                  <motion.div
-                    key={item.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <Card className="p-4 hover:shadow-lg transition-all duration-300 border border-gray-200 hover:border-purple-300">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
-                            <Target className="w-6 h-6 text-purple-600" />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-gray-800">{item.task || item.process || item.name}</h4>
-                            <p className="text-sm text-gray-600">Staff: {item.staff}</p>
-                            {item.responseTime && <p className="text-sm text-gray-600">Response Time: {item.responseTime}hrs</p>}
-                            {item.completion && <p className="text-sm text-gray-600">Completion: {item.completion}%</p>}
-                            {item.efficiency && <p className="text-sm text-gray-600">Efficiency: {item.efficiency}%</p>}
-                            {item.utilization && <p className="text-sm text-gray-600">Utilization: {item.utilization}%</p>}
-                            {item.department && <p className="text-sm text-gray-600">Department: {item.department}</p>}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <div className="text-sm font-medium text-gray-800">{item.status}</div>
-                            <div className="text-xs text-gray-500">{item.date}</div>
-                          </div>
-                          <Badge 
-                            className={`${
-                              item.status === 'Completed' ? 'bg-green-100 text-green-800' :
-                              item.status === 'In Progress' ? 'bg-yellow-100 text-yellow-800' :
-                              item.status === 'Optimized' ? 'bg-blue-100 text-blue-800' :
-                              item.status === 'High' ? 'bg-green-100 text-green-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}
-                          >
-                            {item.status}
                           </Badge>
                           <Button size="sm" variant="outline">
                             <Eye className="w-4 h-4 mr-1" />
