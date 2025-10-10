@@ -365,7 +365,6 @@ function IssueCategorizationCard({ issue, index, issueCategorizationData, editin
     </motion.div>
   );
 }
-
 export default function CustomerSuccessTab({ selectedPG, patients, documents }) {
   // Dynamic Priority Calculation System
   const calculateDynamicPriority = (issue) => {
@@ -658,6 +657,49 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       ...prev,
       [issueId]: data
     }));
+
+    // Move the issue into the selected category in the tree
+    setIssueCategories(prevCategories => {
+      // Create a shallow copy of categories and their issues arrays
+      const updated = Object.fromEntries(
+        Object.entries(prevCategories).map(([key, cat]) => [key, { ...cat, issues: [...cat.issues] }])
+      );
+
+      // Find and remove the issue from any existing category
+      let movedIssue = null;
+      let previousCategoryKey = null;
+      for (const [key, cat] of Object.entries(updated)) {
+        const index = cat.issues.findIndex(issue => issue.id === issueId);
+        if (index !== -1) {
+          movedIssue = { ...cat.issues[index] };
+          previousCategoryKey = key;
+          cat.issues.splice(index, 1);
+          break;
+        }
+      }
+
+      // If not found in any category, nothing else to do
+      if (!movedIssue) return updated;
+
+      // Destination category key from saved type
+      const destinationKey = data.type; // values already align with category keys
+
+      // Ensure destination category exists
+      if (!updated[destinationKey]) {
+        // If destination doesn't exist, restore issue to previous category and return
+        if (previousCategoryKey) updated[previousCategoryKey].issues.unshift(movedIssue);
+        return updated;
+      }
+
+      // Update issue fields and insert into destination category
+      movedIssue.issueCategory = destinationKey;
+      // Keep status but mark workflow as analyzed after categorization
+      movedIssue.workflowStatus = movedIssue.workflowStatus || 'analyzed';
+      updated[destinationKey].issues.unshift(movedIssue);
+
+      return updated;
+    });
+
     setEditingIssueId(null);
   };
 
@@ -1003,7 +1045,6 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       tooltip: 'Growth Opportunities and Potential'
     }
   ];
-
   // Mock data for billed patients
   const billedPatientsData = [
     {
@@ -1304,7 +1345,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     }
   ];
 
-  const issueCategories = {
+  const [issueCategories, setIssueCategories] = useState(() => ({
     technical: {
       name: 'Technical',
       icon: Cpu,
@@ -1479,7 +1520,7 @@ Meanwhile, we can't process billing for these patients, and we're starting to he
 
 Used to take 2-3 days total, now taking 7-10 days.`,
             expectedBehavior: `Documents should move through quickly - prep in a few hours, physician reviews and signs within a day or two, then processed. Should be done in 2-3 days max.`,
-            actualBehavior: `Documents are getting stuck in the review queue for way too long. Physicians say they're getting buried in notification emails and missing the important ones. Takes a full week or more now.`,
+            actualBehavior: `Documents are getting stuck in the review queue for way too long. Physicians say they're getting buried in notification emails and missing the important signature requests. Takes a full week or more now.`,
             impactAssessment: `Problems this is causing:
 - 45 documents backed up right now
 - Taking 7-10 days instead of 2-3 days
@@ -1620,7 +1661,6 @@ Agent: I understand this is urgent, Jennifer. Let me help you right away. How ma
 Caller: All 6 of our front desk and nursing staff. We've tried logging out and back in, but we're getting "Authentication Failed" errors.
 
 Agent: I see. Let me check our system status... I'm not seeing any widespread outages. Can you tell me the error code you're seeing?
-
 Caller: It says "Error Code: AUTH-503" and "Unable to verify credentials."
 
 Agent: That's helpful. It sounds like there might be an issue with your practice's authentication settings. Were there any recent changes to your network or passwords?
@@ -2228,7 +2268,6 @@ Dr. Williams: Thank you. That helps.
   const issueStatistics = useMemo(() => {
     return calculateIssueStatistics();
   }, [regionTypeFilter, regionNameFilter, categoryFilter, channelFilter, statusFilter]);
-
   return (
     <div className="space-y-6">
       {/* Customer Success Overview */}
@@ -2688,7 +2727,7 @@ Dr. Williams: Thank you. That helps.
                             <CardContent className="p-6 text-center">
                               <IconComponent className="w-8 h-8 mx-auto mb-3" />
                               <h3 className="text-xl font-bold mb-2">{category.name}</h3>
-                              <div className="text-2xl font-bold mb-1">{category.count}</div>
+                              <div className="text-2xl font-bold mb-1">{category.issues.length}</div>
                               <div className="text-sm opacity-90">Issues</div>
                               <div className="mt-3 flex items-center justify-center">
                                 {expandedNodes.has(key) ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
@@ -2863,7 +2902,6 @@ Dr. Williams: Thank you. That helps.
           </Card>
         </div>
       </div>
-
       {/* Sub-node Statistics Modal */}
       <Dialog open={subNodeModalOpen} onOpenChange={setSubNodeModalOpen}>
         <DialogContent className="max-w-4xl">
@@ -3517,62 +3555,6 @@ Dr. Williams: Thank you. That helps.
         </DialogContent>
       </Dialog>
 
-      {/* Billed Patients Modal */}
-      <Dialog open={billedPatientsModalOpen} onOpenChange={setBilledPatientsModalOpen}>
-        <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <CheckCircle className="w-6 h-6 text-green-600" />
-              Billed Patients Report
-            </DialogTitle>
-            <DialogDescription>
-              Complete list of successfully billed patients with details
-            </DialogDescription>
-          </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <Badge variant="outline" className="text-green-700 bg-green-50">
-                Total: {billedPatientsData.length} Patients Billed
-              </Badge>
-              <Button size="sm" className="flex items-center gap-2">
-                <Download className="w-4 h-4" />
-                Export Report
-              </Button>
-            </div>
-
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Patient Name</TableHead>
-                  <TableHead>MRN</TableHead>
-                  <TableHead>Age</TableHead>
-                  <TableHead>Diagnosis</TableHead>
-                  <TableHead>Billing Date</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Agency</TableHead>
-                  <TableHead>Physician</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {billedPatientsData.map((patient) => (
-                  <TableRow key={patient.id}>
-                    <TableCell className="font-medium">{patient.name}</TableCell>
-                    <TableCell>{patient.mrn}</TableCell>
-                    <TableCell>{patient.age}</TableCell>
-                    <TableCell>{patient.diagnosis}</TableCell>
-                    <TableCell>{patient.billingDate}</TableCell>
-                    <TableCell className="font-medium text-green-600">{patient.amount}</TableCell>
-                    <TableCell>{patient.agency}</TableCell>
-                    <TableCell>{patient.physician}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        </DialogContent>
-      </Dialog>
-
       {/* Unprepared Documents Modal */}
       <Dialog open={unpreparedDocumentsModalOpen} onOpenChange={setUnpreparedDocumentsModalOpen}>
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
@@ -3896,7 +3878,6 @@ Dr. Williams: Thank you. That helps.
           )}
         </DialogContent>
       </Dialog>
-
       {/* Issue Resolution Panel */}
       <Dialog open={issueResolutionPanel.open} onOpenChange={closeIssueResolutionPanel}>
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
@@ -4984,7 +4965,6 @@ Dr. Williams: Thank you. That helps.
           )}
         </DialogContent>
       </Dialog>
-
       {/* Executive Summary Modal */}
       <Dialog open={executiveSummaryOpen} onOpenChange={setExecutiveSummaryOpen}>
         <DialogContent className="max-w-7xl max-h-[90vh] overflow-y-auto">
@@ -5558,7 +5538,6 @@ Dr. Williams: Thank you. That helps.
           )}
         </DialogContent>
       </Dialog>
-
       {/* Claims & Billing List Modal */}
       <Dialog open={claimsListModalOpen} onOpenChange={setClaimsListModalOpen}>
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
