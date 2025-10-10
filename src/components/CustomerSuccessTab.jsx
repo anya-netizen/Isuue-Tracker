@@ -634,13 +634,13 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     if (!isResolutionEnabled) return;
     setIssueResolutionPanel(prev => ({ ...prev, open: false }));
   };
-
+  
   // Get all unsolved issues from all categories
   const getAllUnsolvedIssues = () => {
     const allIssues = [];
     Object.entries(issueCategories).forEach(([categoryKey, category]) => {
       category.issues.forEach(issue => {
-        if (issue.workflowStatus === 'New') {
+        if (issue.status === 'unsolved') {
           allIssues.push({
             ...issue,
             categoryName: category.name,
@@ -716,14 +716,13 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     return issues.filter(issue => {
       // Priority filter
       if (priorityFilter !== 'all') {
+        if (priorityFilter === 'solved' && issue.status !== 'solved') return false;
+        if (priorityFilter === 'unsolved' && issue.status === 'solved') return false;
         if (['critical', 'high', 'medium', 'low'].includes(priorityFilter)) {
           const dynamicPriority = calculateDynamicPriority(issue);
           if (dynamicPriority.currentPriority !== priorityFilter) return false;
         }
       }
-
-      // Status filter (workflow status) - from top cards
-      if (statusFilter !== 'all' && issue.workflowStatus !== statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1)) return false;
 
       // Region Type filter
       if (regionTypeFilter !== 'all' && issue.regionType !== regionTypeFilter) return false;
@@ -737,6 +736,9 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       // Channel filter
       if (channelFilter !== 'all' && issue.channel !== channelFilter) return false;
 
+      // Status filter
+      if (statusFilter !== 'all' && issue.workflowStatus !== statusFilter) return false;
+
       return true;
     });
   };
@@ -746,7 +748,8 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     return regionTypeFilter !== 'all' || 
            regionNameFilter !== 'all' || 
            categoryFilter !== 'all' || 
-           channelFilter !== 'all';
+           channelFilter !== 'all' || 
+           statusFilter !== 'all';
   };
 
   // Clear all advanced filters
@@ -755,6 +758,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     setRegionNameFilter('all');
     setCategoryFilter('all');
     setChannelFilter('all');
+    setStatusFilter('all');
     setPriorityFilter('all');
   };
 
@@ -1302,7 +1306,6 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     }
   ];
 
-  // Issue Categorization System Data
   const issueCategories = {
     technical: {
       name: 'Technical',
@@ -1858,23 +1861,53 @@ Dr. Williams: Thank you. That helps.
     }
   };
 
-  // Calculate dynamic issue counts for each category
-  Object.keys(issueCategories).forEach(key => {
-    issueCategories[key].count = issueCategories[key].issues.length;
-  });
+  // Helper function to get all issues from all categories
+  const getAllIssues = () => {
+    const allIssues = [];
+    Object.values(issueCategories).forEach(category => {
+      if (category.issues) {
+        allIssues.push(...category.issues);
+      }
+    });
+    return allIssues;
+  };
 
-  // Calculate issue statistics dynamically based on status
-  const allIssuesArray = Object.values(issueCategories).flatMap(cat => cat.issues);
-  const issueStatistics = {
-    totalIssues: allIssuesArray.length,
-    newIssues: allIssuesArray.filter(i => i.workflowStatus === 'New').length,
-    analyzedIssues: allIssuesArray.filter(i => i.workflowStatus === 'Analyzed').length,
-    resolvedIssues: allIssuesArray.filter(i => i.workflowStatus === 'Resolved').length,
-    catalyzedIssues: allIssuesArray.filter(i => i.workflowStatus === 'Catalyzed').length,
-    highPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'high').length,
-    mediumPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'medium').length,
-    lowPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'low').length,
-    criticalPriority: allIssuesArray.filter(i => calculateDynamicPriority(i).currentPriority === 'critical').length
+  // Calculate issue statistics dynamically based on filters
+  const calculateIssueStatistics = () => {
+    // Get all issues and apply advanced filters (but not priority filter yet)
+    const allIssues = getAllIssues();
+    const filteredIssues = applyAdvancedFilters(allIssues);
+    
+    // Calculate total, solved, unsolved from filtered issues
+    const totalIssues = filteredIssues.length;
+    const solvedIssues = filteredIssues.filter(issue => issue.status === 'solved').length;
+    const unsolvedIssues = filteredIssues.filter(issue => issue.status === 'unsolved').length;
+    
+    // Calculate priority counts from filtered issues
+    let highPriority = 0;
+    let mediumPriority = 0;
+    let lowPriority = 0;
+    let criticalPriority = 0;
+    
+    filteredIssues.forEach(issue => {
+      const dynamicPriority = calculateDynamicPriority(issue);
+      const priority = dynamicPriority.finalPriority;
+      
+      if (priority === 'critical') criticalPriority++;
+      else if (priority === 'high') highPriority++;
+      else if (priority === 'medium') mediumPriority++;
+      else if (priority === 'low') lowPriority++;
+    });
+    
+    return {
+      totalIssues,
+      solvedIssues,
+      unsolvedIssues,
+      highPriority,
+      mediumPriority,
+      lowPriority,
+      criticalPriority
+    };
   };
 
   // Persona data for detailed profiles
@@ -2357,7 +2390,7 @@ Dr. Williams: Thank you. That helps.
                 <span className="text-sm font-semibold text-indigo-900">
                   Active Filter: <span className="capitalize">{priorityFilter}</span>
                 </span>
-              </div>
+            </div>
               <Button
                 variant="outline"
                 size="sm"
@@ -2372,74 +2405,43 @@ Dr. Williams: Thank you. That helps.
 
           {/* Issue Statistics & Priority Filter */}
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
-            {/* Summary Statistics Cards - Status Based */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 flex-1">
-              {/* All Status Card */}
+            {/* Summary Statistics Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 flex-1">
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className={`text-center p-4 bg-gradient-to-br from-blue-50 to-indigo-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  statusFilter === 'all' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
+                  priorityFilter === 'all' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
                 }`}
-                onClick={() => setStatusFilter('all')}
+                onClick={() => setPriorityFilter('all')}
               >
-                <div className="text-2xl font-bold text-blue-800">{issueStatistics.totalIssues}</div>
-                <div className="text-sm text-blue-600 font-medium">All</div>
+                <div className="text-2xl font-bold text-blue-800">{calculateIssueStatistics().totalIssues}</div>
+                <div className="text-sm text-blue-600 font-medium">Total Issues</div>
               </motion.div>
-
-              {/* New Status Card - Opens Categorization Modal */}
-              <motion.div 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className={`text-center p-4 bg-gradient-to-br from-orange-50 to-amber-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  statusFilter === 'new' ? 'border-orange-600 ring-2 ring-orange-300' : 'border-orange-200'
-                }`}
-                onClick={() => {
-                  setStatusFilter('new');
-                  setUnsolvedModalOpen(true);
-                }}
-              >
-                <div className="text-2xl font-bold text-orange-800">{issueStatistics.newIssues}</div>
-                <div className="text-sm text-orange-600 font-medium">New</div>
-              </motion.div>
-
-              {/* Analyzed Status Card */}
-              <motion.div 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className={`text-center p-4 bg-gradient-to-br from-purple-50 to-violet-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  statusFilter === 'analyzed' ? 'border-purple-600 ring-2 ring-purple-300' : 'border-purple-200'
-                }`}
-                onClick={() => setStatusFilter('analyzed')}
-              >
-                <div className="text-2xl font-bold text-purple-800">{issueStatistics.analyzedIssues}</div>
-                <div className="text-sm text-purple-600 font-medium">Analyzed</div>
-              </motion.div>
-
-              {/* Catalyzed Status Card */}
-              <motion.div 
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                className={`text-center p-4 bg-gradient-to-br from-yellow-50 to-amber-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  statusFilter === 'catalyzed' ? 'border-yellow-600 ring-2 ring-yellow-300' : 'border-yellow-200'
-                }`}
-                onClick={() => setStatusFilter('catalyzed')}
-              >
-                <div className="text-2xl font-bold text-yellow-800">{issueStatistics.catalyzedIssues}</div>
-                <div className="text-sm text-yellow-600 font-medium">Catalyzed</div>
-              </motion.div>
-
-              {/* Resolved Status Card */}
               <motion.div 
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className={`text-center p-4 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
-                  statusFilter === 'resolved' ? 'border-green-600 ring-2 ring-green-300' : 'border-green-200'
+                  priorityFilter === 'solved' ? 'border-green-600 ring-2 ring-green-300' : 'border-green-200'
                 }`}
-                onClick={() => setStatusFilter('resolved')}
+                onClick={() => setPriorityFilter('solved')}
               >
-                <div className="text-2xl font-bold text-green-800">{issueStatistics.resolvedIssues}</div>
-                <div className="text-sm text-green-600 font-medium">Resolved</div>
+                <div className="text-2xl font-bold text-green-800">{calculateIssueStatistics().solvedIssues}</div>
+                <div className="text-sm text-green-600 font-medium">Solved</div>
+              </motion.div>
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-red-50 to-rose-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  priorityFilter === 'unsolved' ? 'border-red-600 ring-2 ring-red-300' : 'border-red-200'
+                }`}
+                onClick={() => {
+                  setPriorityFilter('unsolved');
+                  setUnsolvedModalOpen(true);
+                }}
+              >
+              <div className="text-2xl font-bold text-red-800">{calculateIssueStatistics().unsolvedIssues}</div>
+                <div className="text-sm text-red-600 font-medium">Unsolved</div>
               </motion.div>
             </div>
 
@@ -2454,14 +2456,14 @@ Dr. Williams: Thank you. That helps.
                 onChange={(e) => setPriorityFilter(e.target.value)}
                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm hover:border-gray-400 transition-colors text-sm font-medium"
               >
-                <option value="all">All Priorities ({issueStatistics.totalIssues})</option>
-                <option value="critical">🔴 Critical ({issueStatistics.criticalPriority})</option>
-                <option value="high">🟡 High Priority ({issueStatistics.highPriority})</option>
-                <option value="medium">🔵 Medium Priority ({issueStatistics.mediumPriority})</option>
-                <option value="low">🟣 Low Priority ({issueStatistics.lowPriority})</option>
+                <option value="all">All Priorities ({calculateIssueStatistics().totalIssues})</option>
+                <option value="critical">🔴 Critical ({calculateIssueStatistics().criticalPriority})</option>
+                <option value="high">🟡 High Priority ({calculateIssueStatistics().highPriority})</option>
+                <option value="medium">🔵 Medium Priority ({calculateIssueStatistics().mediumPriority})</option>
+                <option value="low">🟣 Low Priority ({calculateIssueStatistics().lowPriority})</option>
               </select>
             </div>
-          </div>
+            </div>
 
           {/* Advanced Filters Section */}
           <div className="mb-6">
@@ -2483,7 +2485,7 @@ Dr. Williams: Thank you. That helps.
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {/* Region Type Filter */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2500,7 +2502,7 @@ Dr. Williams: Thank you. That helps.
                   <option value="msa">MSA</option>
                   <option value="gsa">GSA</option>
                 </select>
-              </div>
+            </div>
 
               {/* Region Name Filter (Dynamic) */}
               <div>
@@ -2554,6 +2556,24 @@ Dr. Williams: Thank you. That helps.
                   <option value="email">Email</option>
                   <option value="ticket">Ticket</option>
                   <option value="call">Call</option>
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Status
+                </label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm"
+                >
+                  <option value="all">All Statuses</option>
+                  <option value="new">New</option>
+                  <option value="analyzed">Analyzed</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="catalyzed">Catalyzed</option>
                 </select>
               </div>
             </div>
@@ -3883,7 +3903,7 @@ Dr. Williams: Thank you. That helps.
                 >
                   <div className="flex items-center gap-3">
                     <AlertTriangle className="w-6 h-6 animate-pulse" />
-                    <div>
+                <div>
                       <div className="font-bold text-lg">🚨 PRIORITY ESCALATION ALERT</div>
                       <div className="text-sm">
                         This issue has been open for {dynamicPriority.daysOpen} days and has auto-escalated to CRITICAL priority.
@@ -4041,13 +4061,13 @@ Dr. Williams: Thank you. That helps.
                           {issueResolutionPanel.issue.channel === 'call' && '📞 '}
                           {issueResolutionPanel.issue.channel === 'ticket' && '🎫 '}
                           {issueResolutionPanel.issue.channel.toUpperCase()}
-                        </Badge>
-                      </div>
+                    </Badge>
+                  </div>
                     )}
                     <div className="flex items-center gap-1">
                       <span className="font-medium">Source:</span>
                       <Badge variant="outline" className="text-xs">{issueResolutionPanel.issue.source}</Badge>
-                    </div>
+                </div>
                     <div className="flex items-center gap-1">
                       <span className="font-medium">Category:</span>
                       <Badge variant="outline" className="text-xs">{issueResolutionPanel.issue.category}</Badge>
@@ -4190,39 +4210,39 @@ Dr. Williams: Thank you. That helps.
                       </Card>
                     )}
 
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Issue Information</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Issue ID:</span>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Issue Information</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Issue ID:</span>
                             <span className="font-medium font-mono bg-gray-100 px-2 py-1 rounded">{issueResolutionPanel.issue.id}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Created Date:</span>
-                            <span className="font-medium">{issueResolutionPanel.issue.createdDate}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Assigned To:</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Created Date:</span>
+                          <span className="font-medium">{issueResolutionPanel.issue.createdDate}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Assigned To:</span>
                             <Badge variant="outline" className="font-medium">{issueResolutionPanel.issue.assignedTo}</Badge>
+                        </div>
+                        {issueResolutionPanel.issue.solvedDate && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Solved Date:</span>
+                            <span className="font-medium">{issueResolutionPanel.issue.solvedDate}</span>
                           </div>
-                          {issueResolutionPanel.issue.solvedDate && (
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Solved Date:</span>
-                              <span className="font-medium">{issueResolutionPanel.issue.solvedDate}</span>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
+                        )}
+                      </CardContent>
+                    </Card>
 
-                      <Card>
-                        <CardHeader>
-                          <CardTitle className="text-lg">Suggested Actions</CardTitle>
-                        </CardHeader>
-                        <CardContent className="space-y-3">
-                          <div className="space-y-2">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-lg">Suggested Actions</CardTitle>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="space-y-2">
                           <Button 
                             onClick={() => contactVia('call', { phone: '+1-555-SUPPORT' })}
                             className="w-full justify-start hover:bg-green-50" 
@@ -4239,9 +4259,9 @@ Dr. Williams: Thank you. That helps.
                                 setEmailViewerOpen(true);
                               } else {
                                 contactVia('email', { 
-                                  email: 'support@company.com',
-                                  subject: `Issue Follow-up: ${issueResolutionPanel.issue?.title}`,
-                                  body: `Regarding issue ${issueResolutionPanel.issue?.id}: ${issueResolutionPanel.issue?.description}`
+                              email: 'support@company.com',
+                              subject: `Issue Follow-up: ${issueResolutionPanel.issue?.title}`,
+                              body: `Regarding issue ${issueResolutionPanel.issue?.id}: ${issueResolutionPanel.issue?.description}`
                                 });
                               }
                             }}
@@ -4274,9 +4294,9 @@ Dr. Williams: Thank you. That helps.
                             <Users className="w-4 h-4 mr-2" />
                             Escalate to Manager
                           </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
+                        </div>
+                      </CardContent>
+                    </Card>
                     </div>
                   </div>
                 </TabsContent>
@@ -4304,7 +4324,7 @@ Dr. Williams: Thank you. That helps.
                           Analysis quality: {issueAnalysisValid ? 'Valid' : 'Needs improvement'}
                         </span>
                         <div className="flex gap-2">
-                          <Button 
+                        <Button 
                             onClick={() => {
                               if (issueAnalysis.length > 50) {
                                 setIssueAnalysisValid(true);
@@ -4323,11 +4343,11 @@ Dr. Williams: Thank you. That helps.
                                 alert('✅ Analysis saved successfully!\n\nPlease validate the analysis to unlock the Resolution tab.');
                               }
                             }}
-                            className="bg-indigo-600 hover:bg-indigo-700"
+                          className="bg-indigo-600 hover:bg-indigo-700"
                             disabled={issueAnalysis.length <= 50}
-                          >
+                        >
                             Save Analysis
-                          </Button>
+                        </Button>
                           {isResolutionEnabled && (
                             <Button
                               onClick={() => setIssueResolutionPanel({...issueResolutionPanel, activeTab: 'resolution'})}
@@ -4337,7 +4357,7 @@ Dr. Williams: Thank you. That helps.
                               Go to Resolution
                             </Button>
                           )}
-                        </div>
+                      </div>
                       </div>
 
                       {/* Analysis History */}
@@ -5852,9 +5872,9 @@ Dr. Williams: Thank you. That helps.
                 <AlertTriangle className="w-7 h-7 text-white" />
               </div>
               <div>
-                <div className="text-2xl font-bold text-gray-900">New Issues Categorization</div>
+                <div className="text-2xl font-bold text-gray-900">Unsolved Issues Management</div>
                 <div className="text-sm font-normal text-gray-500 mt-1">
-                  Categorize and prioritize new issues
+                  Categorize and prioritize unresolved issues
                 </div>
               </div>
             </DialogTitle>
@@ -5863,18 +5883,18 @@ Dr. Williams: Thank you. That helps.
           <div className="space-y-4 mt-6">
             {/* Summary Stats */}
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200">
+              <Card className="bg-gradient-to-br from-red-50 to-rose-50 border-red-200">
                 <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-orange-800">{getAllUnsolvedIssues().length}</div>
-                  <div className="text-sm text-orange-600 font-medium">Total New</div>
+                  <div className="text-3xl font-bold text-red-800">{getAllUnsolvedIssues().length}</div>
+                  <div className="text-sm text-red-600 font-medium">Total Unsolved</div>
                 </CardContent>
               </Card>
-              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+              <Card className="bg-gradient-to-br from-orange-50 to-amber-50 border-orange-200">
                 <CardContent className="p-4 text-center">
-                  <div className="text-3xl font-bold text-green-800">
+                  <div className="text-3xl font-bold text-orange-800">
                     {Object.keys(issueCategorizationData).length}
                   </div>
-                  <div className="text-sm text-green-600 font-medium">Categorized</div>
+                  <div className="text-sm text-orange-600 font-medium">Categorized</div>
                 </CardContent>
               </Card>
               <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
@@ -5897,7 +5917,7 @@ Dr. Williams: Thank you. That helps.
                   <div>
                     <h4 className="font-semibold text-indigo-900 mb-2">Categorization Instructions</h4>
                     <p className="text-sm text-indigo-800 mb-2">
-                      For each new issue, please:
+                      For each unsolved issue, please:
                     </p>
                     <ol className="text-sm text-indigo-700 space-y-1 ml-5 list-decimal">
                       <li>Select the appropriate <strong>Issue Type</strong> from the dropdown</li>
