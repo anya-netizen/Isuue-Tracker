@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -2214,6 +2214,11 @@ Dr. Williams: Thank you. That helps.
     return mockAdmin[adminType] || [];
   };
 
+  // Calculate issue statistics with useMemo to optimize performance
+  const issueStatistics = useMemo(() => {
+    return calculateIssueStatistics();
+  }, [regionTypeFilter, regionNameFilter, categoryFilter, channelFilter, statusFilter]);
+
   return (
     <div className="space-y-6">
       {/* Customer Success Overview */}
@@ -2415,7 +2420,7 @@ Dr. Williams: Thank you. That helps.
                 }`}
                 onClick={() => setPriorityFilter('all')}
               >
-                <div className="text-2xl font-bold text-blue-800">{calculateIssueStatistics().totalIssues}</div>
+                <div className="text-2xl font-bold text-blue-800">{issueStatistics.totalIssues}</div>
                 <div className="text-sm text-blue-600 font-medium">Total Issues</div>
               </motion.div>
               <motion.div 
@@ -2426,7 +2431,7 @@ Dr. Williams: Thank you. That helps.
                 }`}
                 onClick={() => setPriorityFilter('solved')}
               >
-                <div className="text-2xl font-bold text-green-800">{calculateIssueStatistics().solvedIssues}</div>
+                <div className="text-2xl font-bold text-green-800">{issueStatistics.solvedIssues}</div>
                 <div className="text-sm text-green-600 font-medium">Solved</div>
               </motion.div>
               <motion.div 
@@ -2440,7 +2445,7 @@ Dr. Williams: Thank you. That helps.
                   setUnsolvedModalOpen(true);
                 }}
               >
-              <div className="text-2xl font-bold text-red-800">{calculateIssueStatistics().unsolvedIssues}</div>
+              <div className="text-2xl font-bold text-red-800">{issueStatistics.unsolvedIssues}</div>
                 <div className="text-sm text-red-600 font-medium">Unsolved</div>
               </motion.div>
             </div>
@@ -2456,11 +2461,11 @@ Dr. Williams: Thank you. That helps.
                 onChange={(e) => setPriorityFilter(e.target.value)}
                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm hover:border-gray-400 transition-colors text-sm font-medium"
               >
-                <option value="all">All Priorities ({calculateIssueStatistics().totalIssues})</option>
-                <option value="critical">🔴 Critical ({calculateIssueStatistics().criticalPriority})</option>
-                <option value="high">🟡 High Priority ({calculateIssueStatistics().highPriority})</option>
-                <option value="medium">🔵 Medium Priority ({calculateIssueStatistics().mediumPriority})</option>
-                <option value="low">🟣 Low Priority ({calculateIssueStatistics().lowPriority})</option>
+                <option value="all">All Priorities ({issueStatistics.totalIssues})</option>
+                <option value="critical">🔴 Critical ({issueStatistics.criticalPriority})</option>
+                <option value="high">🟡 High Priority ({issueStatistics.highPriority})</option>
+                <option value="medium">🔵 Medium Priority ({issueStatistics.mediumPriority})</option>
+                <option value="low">🟣 Low Priority ({issueStatistics.lowPriority})</option>
               </select>
             </div>
             </div>
