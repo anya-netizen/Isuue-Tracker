@@ -537,6 +537,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [opportunityEnabled, setOpportunityEnabled] = useState(false);
   const [currentUser, setCurrentUser] = useState('John Smith'); // In production, this would come from auth
   const [analysisHistory, setAnalysisHistory] = useState([]); // Store all saved analyses with user info
+  const [validatedAnalyses, setValidatedAnalyses] = useState(new Set()); // Track which analyses have been validated
   
   // New state variables for Issue Categorization System
   const [issueFlowchartOpen, setIssueFlowchartOpen] = useState(false);
@@ -593,7 +594,9 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [statusFilter, setStatusFilter] = useState('all');
 
   // Derived values - calculated after state declarations
-  const isResolutionEnabled = analysisHistory.some(a => a.issueId === issueResolutionPanel.issue?.id);
+  // Check if at least one analysis for the current issue has been validated
+  const issueAnalyses = analysisHistory.filter(a => a.issueId === issueResolutionPanel.issue?.id);
+  const isResolutionEnabled = issueAnalyses.some(analysis => validatedAnalyses.has(analysis.id));
   const isOpportunityEnabled = issueResolutionNotes.trim().length >= 10;
 
   // Handlers for resolution actions
@@ -4070,7 +4073,7 @@ Dr. Williams: Thank you. That helps.
                   <TabsTrigger value="analysis">
                     Analysis
                     {!isResolutionEnabled && (
-                      <Badge className="ml-2 bg-orange-100 text-orange-800 text-xs">Required</Badge>
+                      <Badge className="ml-2 bg-orange-100 text-orange-800 text-xs">Validation Required</Badge>
                     )}
                   </TabsTrigger>
                   <TabsTrigger 
@@ -4299,7 +4302,7 @@ Dr. Williams: Thank you. That helps.
                                 // Clear the textarea for next analysis
                                 setIssueAnalysis('');
                                 // Show success message
-                                alert('✅ Analysis saved successfully!\n\nThe Resolution tab is now unlocked. You can proceed to create a resolution for this issue.');
+                                alert('✅ Analysis saved successfully!\n\nPlease validate the analysis to unlock the Resolution tab.');
                               }
                             }}
                             className="bg-indigo-600 hover:bg-indigo-700"
@@ -4347,9 +4350,31 @@ Dr. Williams: Thank you. That helps.
                                       </div>
                                     </div>
                                   </div>
-                                  <Badge className="bg-indigo-100 text-indigo-800">
-                                    Analysis #{analysisHistory.filter(a => a.issueId === issueResolutionPanel.issue?.id).length - analysisHistory.filter(a => a.issueId === issueResolutionPanel.issue?.id).indexOf(analysis)}
-                                  </Badge>
+                                  <div className="flex items-center gap-2">
+                                    {validatedAnalyses.has(analysis.id) ? (
+                                      <Badge className="bg-green-100 text-green-800 flex items-center gap-1">
+                                        <CheckCircle className="w-3 h-3" />
+                                        Validated
+                                      </Badge>
+                                    ) : (
+                                      <Button
+                                        size="sm"
+                                        onClick={() => {
+                                          const newValidated = new Set(validatedAnalyses);
+                                          newValidated.add(analysis.id);
+                                          setValidatedAnalyses(newValidated);
+                                          alert(`✅ Analysis validated successfully by ${currentUser}!\n\nThe Resolution tab is now unlocked. You can proceed to create a resolution for this issue.`);
+                                        }}
+                                        className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs px-3"
+                                      >
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                        Validate
+                                      </Button>
+                                    )}
+                                    <Badge className="bg-indigo-100 text-indigo-800">
+                                      Analysis #{analysisHistory.filter(a => a.issueId === issueResolutionPanel.issue?.id).length - analysisHistory.filter(a => a.issueId === issueResolutionPanel.issue?.id).indexOf(analysis)}
+                                    </Badge>
+                                  </div>
                                 </div>
                                 <div className="mt-3 text-sm text-gray-700 bg-white p-3 rounded border border-indigo-100">
                                   {analysis.content}
@@ -4378,7 +4403,7 @@ Dr. Williams: Thank you. That helps.
                             🔒 Resolution Tab Locked
                           </h3>
                           <p className="text-sm text-orange-800 mb-3">
-                            Before you can create a resolution, you need to provide a valid analysis of the issue.
+                            Before you can create a resolution, you need to provide and validate an analysis of the issue.
                           </p>
                           <div className="bg-white rounded-lg p-4 border border-orange-200">
                             <p className="text-sm font-semibold text-orange-900 mb-2">To unlock this tab:</p>
@@ -4386,6 +4411,7 @@ Dr. Williams: Thank you. That helps.
                               <li>Go to the <strong>Analysis</strong> tab</li>
                               <li>Write a detailed analysis (minimum 50 characters)</li>
                               <li>Click <strong>"Save Analysis"</strong> button</li>
+                              <li>Click <strong>"Validate"</strong> button on the saved analysis</li>
                               <li>Return here to create your resolution</li>
                             </ol>
                           </div>
@@ -4509,21 +4535,38 @@ Dr. Williams: Thank you. That helps.
                         {analysisHistory
                           .filter(a => a.issueId === issueResolutionPanel.issue?.id)
                           .map((analysis) => (
-                            <div key={analysis.id} className="flex items-start gap-3 p-3 bg-indigo-50 rounded-lg">
-                              <div className="w-2 h-2 bg-indigo-500 rounded-full mt-2"></div>
-                              <div className="flex-1">
-                                <div className="font-medium flex items-center gap-2">
-                                  <FileText className="w-4 h-4" />
-                                  Analysis Added
-                                </div>
-                                <div className="text-sm text-gray-600 mb-2">
-                                  {analysis.timestamp} by {analysis.user}
-                                </div>
-                                <div className="text-sm text-gray-700 bg-white p-2 rounded border border-indigo-100 italic">
-                                  "{analysis.content.substring(0, 100)}{analysis.content.length > 100 ? '...' : ''}"
+                            <React.Fragment key={analysis.id}>
+                              <div className="flex items-start gap-3 p-3 bg-indigo-50 rounded-lg">
+                                <div className="w-2 h-2 bg-indigo-500 rounded-full mt-2"></div>
+                                <div className="flex-1">
+                                  <div className="font-medium flex items-center gap-2">
+                                    <FileText className="w-4 h-4" />
+                                    Analysis Added
+                                  </div>
+                                  <div className="text-sm text-gray-600 mb-2">
+                                    {analysis.timestamp} by {analysis.user}
+                                  </div>
+                                  <div className="text-sm text-gray-700 bg-white p-2 rounded border border-indigo-100 italic">
+                                    "{analysis.content.substring(0, 100)}{analysis.content.length > 100 ? '...' : ''}"
+                                  </div>
                                 </div>
                               </div>
-                            </div>
+                              {/* Validation Event */}
+                              {validatedAnalyses.has(analysis.id) && (
+                                <div className="flex items-start gap-3 p-3 bg-green-50 rounded-lg ml-6">
+                                  <div className="w-2 h-2 bg-green-500 rounded-full mt-2"></div>
+                                  <div className="flex-1">
+                                    <div className="font-medium flex items-center gap-2">
+                                      <CheckCircle className="w-4 h-4 text-green-600" />
+                                      Analysis Validated
+                                    </div>
+                                    <div className="text-sm text-gray-600">
+                                      Validated by {currentUser}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </React.Fragment>
                           ))}
 
                         {/* Issue Resolved Event */}
