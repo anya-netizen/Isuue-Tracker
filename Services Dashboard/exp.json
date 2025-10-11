@@ -1,0 +1,328 @@
+{
+  "metadata": {
+    "project": "Services Dashboard 3",
+    "generatedBy": "GitHub Copilot",
+    "date": "2025-09-30",
+    "description": "Structured representation of data flow: fetch, create, update, delete, search, and push (webhook/websocket)."
+  },
+  "conventions": {
+    "contentType": "application/json",
+    "authHeader": "Authorization: Bearer <token>",
+    "dateFormat": "ISO-8601 (UTC)",
+    "pagination": {
+      "requestParams": ["page", "per_page", "sort", "filter"],
+      "responseMeta": ["total", "page", "per_page", "next_page", "prev_page"]
+    },
+    "errorFormat": {
+      "status": "http status code",
+      "error": "short code",
+      "message": "human readable message",
+      "details": "optional object"
+    }
+  },
+  "entities": {
+    "Service": {
+      "description": "Primary service resource displayed in dashboard",
+      "schema": {
+        "id": "string (uuid)",
+        "name": "string",
+        "ownerId": "string (user id)",
+        "status": "string (active|inactive|degraded)",
+        "metrics": ["Metric"],
+        "createdAt": "string (ISO-8601)",
+        "updatedAt": "string (ISO-8601)"
+      }
+    },
+    "Metric": {
+      "description": "Time-series or instantaneous metric for a Service",
+      "schema": {
+        "id": "string (uuid)",
+        "serviceId": "string (uuid)",
+        "name": "string",
+        "value": "number",
+        "unit": "string",
+        "timestamp": "string (ISO-8601)"
+      }
+    },
+    "User": {
+      "description": "Authenticated user/owner",
+      "schema": {
+        "id": "string (uuid)",
+        "email": "string",
+        "name": "string",
+        "roles": ["string"],
+        "createdAt": "string (ISO-8601)"
+      }
+    },
+    "Alert": {
+      "description": "Alert triggered by metric thresholds or rules",
+      "schema": {
+        "id": "string",
+        "serviceId": "string",
+        "metricId": "string",
+        "severity": "string (info|warning|critical)",
+        "message": "string",
+        "status": "string (open|acknowledged|resolved)",
+        "createdAt": "string (ISO-8601)"
+      }
+    }
+  },
+  "endpoints": [
+    {
+      "path": "/api/services",
+      "methods": {
+        "GET": {
+          "purpose": "List services (supports pagination & filtering)",
+          "queryParams": ["page", "per_page", "status", "ownerId", "sort"],
+          "response": {
+            "200": {
+              "body": {
+                "data": ["Service"],
+                "meta": {
+                  "total": "integer",
+                  "page": "integer",
+                  "per_page": "integer",
+                  "next_page": "integer|null"
+                }
+              }
+            }
+          },
+          "exampleRequest": "GET /api/services?page=1&per_page=25&status=active"
+        },
+        "POST": {
+          "purpose": "Create a new Service",
+          "requestBody": {
+            "name": "string",
+            "ownerId": "string",
+            "initialStatus": "string (optional)"
+          },
+          "response": {
+            "201": {
+              "body": {
+                "data": "Service"
+              }
+            }
+          },
+          "exampleRequest": {
+            "headers": { "Content-Type": "application/json", "Authorization": "Bearer <token>" },
+            "body": { "name": "Payments", "ownerId": "user-123" }
+          }
+        }
+      }
+    },
+    {
+      "path": "/api/services/{serviceId}",
+      "methods": {
+        "GET": {
+          "purpose": "Fetch single service by id",
+          "pathParams": ["serviceId"],
+          "response": {
+            "200": { "body": { "data": "Service" } },
+            "404": { "body": { "error": "not_found", "message": "Service not found" } }
+          },
+          "exampleRequest": "GET /api/services/abcd-1234"
+        },
+        "PUT": {
+          "purpose": "Update service metadata",
+          "requestBody": { "name": "string (optional)", "status": "string (optional)" },
+          "response": { "200": { "body": { "data": "Service" } } },
+          "exampleRequest": {
+            "headers": { "Authorization": "Bearer <token>" },
+            "body": { "status": "degraded" }
+          }
+        },
+        "DELETE": {
+          "purpose": "Remove service",
+          "response": { "204": { "body": null } },
+          "exampleRequest": "DELETE /api/services/abcd-1234"
+        }
+      }
+    },
+    {
+      "path": "/api/services/{serviceId}/metrics",
+      "methods": {
+        "GET": {
+          "purpose": "Fetch metrics for a service (time range support)",
+          "queryParams": ["from", "to", "aggregate", "limit"],
+          "response": { "200": { "body": { "data": ["Metric"] } } },
+          "exampleRequest": "GET /api/services/abcd-1234/metrics?from=2025-09-01T00:00:00Z&to=2025-09-30T23:59:59Z"
+        },
+        "POST": {
+          "purpose": "Push a new metric datapoint (ingest)",
+          "requestBody": { "name": "string", "value": "number", "unit": "string", "timestamp": "ISO-8601" },
+          "response": { "201": { "body": { "data": "Metric" } } },
+          "exampleRequest": {
+            "headers": { "Content-Type": "application/json" },
+            "body": { "name": "latency_ms", "value": 123.4, "unit": "ms", "timestamp": "2025-09-30T12:34:56Z" }
+          }
+        }
+      }
+    },
+    {
+      "path": "/api/search",
+      "methods": {
+        "GET": {
+          "purpose": "Global search across services, metrics, alerts",
+          "queryParams": ["q", "type", "limit", "offset"],
+          "response": {
+            "200": {
+              "body": {
+                "results": [
+                  {
+                    "type": "Service|Metric|Alert",
+                    "id": "string",
+                    "score": "number",
+                    "snippet": "string",
+                    "data": "object (entity payload)"
+                  }
+                ]
+              }
+            }
+          },
+          "exampleRequest": "GET /api/search?q=payments&type=service&limit=10"
+        }
+      }
+    },
+    {
+      "path": "/api/alerts",
+      "methods": {
+        "GET": { "purpose": "List alerts", "response": { "200": { "body": { "data": ["Alert"], "meta": {} } } } },
+        "POST": {
+          "purpose": "Create alert (manual or from rule engine)",
+          "requestBody": { "serviceId": "string", "metricId": "string", "severity": "string", "message": "string" },
+          "response": { "201": { "body": { "data": "Alert" } } }
+        }
+      }
+    },
+    {
+      "path": "https://dawaventity-g5a6apetdkambpcu.eastus-01.azurewebsites.net/api/Entity",
+      "description": "External Azure endpoint to fetch entities by type",
+      "external": true,
+      "methods": {
+        "GET": {
+          "purpose": "List entities filtered by type",
+          "queryParams": ["EntityType"],
+          "allowedValues": { "EntityType": ["PRACTICE", "ANCILLIARY", "CORPORATE"] },
+          "headers": { "accept": "*/*" },
+          "response": { "200": { "body": { "data": "array" } } },
+          "exampleRequests": [
+            "curl -X GET 'https://dawaventity-g5a6apetdkambpcu.eastus-01.azurewebsites.net/api/Entity?EntityType=PRACTICE' -H 'accept: */*'",
+            "curl -X GET 'https://dawaventity-g5a6apetdkambpcu.eastus-01.azurewebsites.net/api/Entity?EntityType=ANCILLIARY' -H 'accept: */*'",
+            "curl -X GET 'https://dawaventity-g5a6apetdkambpcu.eastus-01.azurewebsites.net/api/Entity?EntityType=CORPORATE' -H 'accept: */*'"
+          ]
+        }
+      }
+    }
+  ],
+  "realtime": {
+    "websocket": {
+      "url": "wss://api.example.com/realtime",
+      "auth": "send token on connection or via query param",
+      "messageEnvelope": {
+        "type": "string (e.g., metric_update | alert | service_update)",
+        "payload": "object (entity payload)",
+        "timestamp": "ISO-8601"
+      },
+      "examples": [
+        {
+          "type": "metric_update",
+          "payload": { "serviceId": "abcd-1234", "name": "latency_ms", "value": 150.2, "timestamp": "2025-09-30T12:35:00Z" }
+        },
+        {
+          "type": "alert",
+          "payload": { "id": "alert-1", "serviceId": "abcd-1234", "severity": "critical", "message": "Latency > 200ms", "createdAt": "2025-09-30T12:35:01Z" }
+        }
+      ]
+    },
+    "webhook": {
+      "urlTemplate": "POST https://hook.yourservice.com/events",
+      "headers": { "Content-Type": "application/json" },
+      "payload": {
+        "event": "metric.created | alert.opened | service.updated",
+        "data": "object (entity payload)",
+        "meta": { "source": "string", "sentAt": "ISO-8601" }
+      }
+    }
+  },
+  "authAndPermissions": {
+    "authTypes": ["Bearer token (JWT)", "API Key (optional)"],
+    "scopes": {
+      "read:services": "Read-only service access",
+      "write:services": "Create/update services",
+      "ingest:metrics": "Push metrics",
+      "admin": "Full access"
+    },
+    "failureResponses": {
+      "401": { "error": "unauthorized", "message": "Missing or invalid token" },
+      "403": { "error": "forbidden", "message": "Insufficient scope or role" }
+    }
+  },
+  "errors": {
+    "schema": { "status": "integer", "error": "string", "message": "string", "details": "object|null" },
+    "commonErrors": [
+      { "code": 400, "error": "bad_request", "message": "Invalid input" },
+      { "code": 404, "error": "not_found", "message": "Resource not found" },
+      { "code": 409, "error": "conflict", "message": "Resource conflict" },
+      { "code": 500, "error": "server_error", "message": "Internal server error" }
+    ]
+  },
+  "examples": {
+    "fetchService": {
+      "request": "GET /api/services/abcd-1234",
+      "response": {
+        "status": 200,
+        "body": {
+          "data": {
+            "id": "abcd-1234",
+            "name": "Payments",
+            "ownerId": "user-1",
+            "status": "active",
+            "createdAt": "2025-01-01T00:00:00Z",
+            "updatedAt": "2025-09-30T12:00:00Z"
+          }
+        }
+      }
+    },
+    "createMetric": {
+      "request": {
+        "method": "POST",
+        "path": "/api/services/abcd-1234/metrics",
+        "headers": { "Content-Type": "application/json", "Authorization": "Bearer <token>" },
+        "body": { "name": "latency_ms", "value": 120.5, "unit": "ms", "timestamp": "2025-09-30T12:34:56Z" }
+      },
+      "response": {
+        "status": 201,
+        "body": {
+          "data": { "id": "m-987", "serviceId": "abcd-1234", "name": "latency_ms", "value": 120.5, "unit": "ms", "timestamp": "2025-09-30T12:34:56Z" }
+        }
+      }
+    },
+    "search": {
+      "request": "GET /api/search?q=payment&limit=10",
+      "response": {
+        "status": 200,
+        "body": {
+          "results": [
+            { "type": "Service", "id": "abcd-1234", "score": 98.2, "snippet": "Payments service", "data": { "name": "Payments" } }
+          ]
+        }
+      }
+    },
+    "pushEventWebhook": {
+      "request": { "method": "POST", "path": "https://hook.example.com/events", "body": { "event": "alert.opened", "data": { "id": "alert-1" } } },
+      "response": { "status": 200, "body": { "ok": true } }
+    }
+  },
+  "dataFlowDescriptions": {
+    "readFlow": "Clients call GET endpoints with optional query params. Server validates auth, applies filters/pagination, returns JSON { data, meta }. Client renders or caches data.",
+    "createFlow": "Client POSTs JSON to collection endpoints with Authorization header. Server validates payload, creates record, returns 201 with created entity. Optionally triggers events/webhooks and pushes realtime messages.",
+    "updateFlow": "Client PUTs or PATCHes to resource endpoint. Server authorizes and validates, updates entity, returns 200 with updated payload and emits update events.",
+    "deleteFlow": "Client DELETEs resource. Server authorizes, deletes or marks soft-deleted, returns 204. Downstream cache invalidation and webhook notifications may occur.",
+    "searchFlow": "Client requests /api/search?q=...; server performs index lookup or DB search; response is ranked list with snippets and entity payloads; supports type filtering and pagination.",
+    "realtimePush": "Metric ingestion or alert engine posts event -> server writes to store -> server broadcasts to websocket clients (type, payload, timestamp) and calls configured webhooks asynchronously.",
+    "errorHandling": "All endpoints return structured error JSON. Clients surface message and optionally details for debug. Retry rules depend on error codes (5xx = retry, 4xx = client fix)."
+  },
+  "notes": {
+    "adaptationInstructions": "This template is generic. Reply 'scan workspace' so I can read files and produce an exact JSON mapping reflecting actual routes, payloads, schemas, events, and examples from your codebase."
+  }
+}

@@ -1,0 +1,627 @@
+{
+  "$comment": "Engineering reference: Data structures, operations, and end-to-end dataflows for the Services Dashboard.",
+    "$schema_version": "1.0",
+    "notes": "Mock app uses in-memory entities with .create() and .update(). Treat 'create' as POST and 'update' as PUT. Dates use ISO-8601 yyyy-mm-dd or full ISO timestamps as shown.",
+  "$comment_notes": "When swapping to a real backend, keep field names/enums to minimize refactors.",
+  "glossary": {
+    "$comment": "Shared terminology so product, design, and engineering stay aligned.",
+    "entity": "A top-level data type managed in the app (Patient, Document, etc.)",
+    "record": "An instance of an entity (e.g., one patient)",
+    "id": "Unique identifier generated if not provided on create",
+    "list": "Returns all records (with optional sort)",
+    "findAll": "Returns filtered records using a simple query object",
+    "findById": "Returns one record by id",
+    "create": "Insert a new record (treat as POST)",
+    "update": "Modify an existing record (treat as PUT)",
+    "delete": "Remove a record (treat as DELETE)",
+    "processing_status": "State of a document in the ingestion pipeline",
+    "billability_status": "Billing readiness: billable | pending_review | unbillable"
+  },
+  "enums": {
+    "$comment": "Allowed values for key fields; align UI selects and API validation.",
+    "Document.document_type": ["referral", "orders", "discharge", "soc", "485", "f2f", "soe"],
+    "Document.processing_status": ["extracted", "validated", "processing"],
+    "Document.status": ["completed", "pending_review"],
+    "Patient.status": ["active"],
+    "Patient.billability_status": ["billable", "pending_review", "unbillable", "pending"],
+    "ActionItem.priority": ["low", "medium", "high"],
+    "ActionItem.status": ["pending", "in_progress", "completed"]
+  },
+  "field_constraints": {
+    "$comment": "Formats and validation hints used across entities.",
+    "date": "YYYY-MM-DD",
+    "timestamp": "ISO-8601 (e.g., 2025-09-24T10:30:00Z)",
+    "npi": "10 digits string",
+    "zip": "US ZIP, with or without dash",
+    "url": "Absolute URL (https://...)"
+  },
+    "transport": {
+      "$comment": "Non-CRUD utilities invoked by flows (upload, AI processing).",
+      "upload_file": {
+        "endpoint": "UploadFile",
+        "method": "POST",
+        "payload": {
+          "required": ["file"],
+          "optional": [],
+          "types": {
+            "file": "File|Blob"
+          },
+          "example": {
+            "file": "<File object>"
+          }
+        },
+        "returns": {
+          "file_url": "string (mock storage URL)"
+        }
+      },
+      "ai_process_document": {
+        "endpoint": "processDocumentWithAI",
+        "method": "POST",
+        "payload": {
+          "required": ["file_url", "json_schema", "mime_type"],
+          "types": {
+            "file_url": "string",
+            "json_schema": "object",
+            "mime_type": "string"
+          },
+          "example": {
+            "file_url": "https://mock-storage.example.com/files/file-123",
+            "json_schema": {
+              "type": "object",
+              "properties": {
+                "patient_id": { "type": "string" },
+                "physician": { "type": "string" },
+                "episode_date": { "type": "string", "format": "date" },
+                "extracted_text": { "type": "string" },
+                "diagnosis": { "type": "string" },
+                "medications": { "type": "array", "items": { "type": "string" } },
+                "care_plan": { "type": "string" }
+              }
+            },
+            "mime_type": "application/pdf"
+          }
+        },
+        "returns": {
+          "status": "completed|error",
+          "output": "object (matches json_schema)"
+        }
+      }
+    },
+    "entities": {
+      "$comment": "CRUD models exposed to the UI. Treat create as POST and update as PUT.",
+      "Document": {
+        "$comment": "Clinical documents tied to patients (SOC, 485, F2F, orders, discharge).",
+        "create": {
+          "required": ["patient_id", "document_type", "title", "file_url"],
+          "optional": [
+            "processing_status",
+            "extracted_data",
+            "physician",
+            "episode_date",
+            "date_received",
+            "status",
+            "uploadedBy",
+            "fileSize"
+          ],
+          "types": {
+            "patient_id": "string",
+            "document_type": "string (e.g., referral|orders|discharge|soc|485|f2f|soe)",
+            "title": "string",
+            "file_url": "string",
+            "processing_status": "string (e.g., extracted|validated|processing)",
+            "extracted_data": "object",
+            "physician": "string",
+            "episode_date": "string (YYYY-MM-DD)",
+            "date_received": "string (ISO timestamp)",
+            "status": "string (e.g., completed|pending_review)",
+            "uploadedBy": "string",
+            "fileSize": "string"
+          },
+          "example": {
+            "patient_id": "P001",
+            "document_type": "soc",
+            "title": "Start of Care Assessment - John Smith",
+            "file_url": "https://mock-storage.example.com/files/file-123",
+            "processing_status": "extracted",
+            "extracted_data": { "diagnosis": "CHF", "medications": ["Lasix"] },
+            "physician": "Dr. Sarah Wilson",
+            "episode_date": "2024-12-01",
+            "date_received": "2024-12-01T09:30:00Z"
+          }
+        },
+        "update": {
+          "id": "string (document id)",
+          "allowed_fields": [
+            "title",
+            "processing_status",
+            "extracted_data",
+            "physician",
+            "episode_date",
+            "date_received",
+            "status",
+            "uploadedBy",
+            "fileSize",
+            "document_type"
+          ],
+          "example": {
+            "title": "Updated Title",
+            "processing_status": "validated",
+            "status": "completed"
+          }
+        }
+      },
+      "Patient": {
+        "$comment": "Patient master + billing fields used by dashboards and filters.",
+        "create": {
+          "required": ["patient_id", "name"],
+          "optional": [
+            "date_of_birth",
+            "gender",
+            "address",
+            "city",
+            "state",
+            "zip",
+            "phone",
+            "email",
+            "insurance",
+            "insurance_company",
+            "insurance_id",
+            "primaryDiagnosis",
+            "diagnosis_1",
+            "diagnosis_2",
+            "diagnosis_3",
+            "diagnosis_4",
+            "diagnosis_5",
+            "diagnosis_6",
+            "admission_date",
+            "soc_date",
+            "soe_date",
+            "eoe_date",
+            "status",
+            "billability_status",
+            "current_pg",
+            "assigned_hha",
+            "agency_npi",
+            "certification_provider",
+            "billing_provider_npi",
+            "supervising_provider",
+            "supervising_provider_npi",
+            "rendering_provider",
+            "rendering_provider_npi",
+            "cpt_code",
+            "pos",
+            "units",
+            "cpt_charges",
+            "line1_dos_from",
+            "line1_dos_to",
+            "physicianGroupId",
+            "homeHealthAgencyId"
+          ],
+          "types": {
+            "patient_id": "string",
+            "name": "string",
+            "date_of_birth": "string (YYYY-MM-DD)",
+            "admission_date": "string (YYYY-MM-DD)",
+            "status": "string (e.g., active)",
+            "billability_status": "string (e.g., billable|pending_review|unbillable)",
+            "physicianGroupId": "string",
+            "homeHealthAgencyId": "string"
+          },
+          "example": {
+            "patient_id": "PAT001",
+            "name": "Patient PAT001",
+            "date_of_birth": "1970-01-01",
+            "admission_date": "2025-09-25",
+            "billability_status": "pending_review",
+            "current_pg": "Metro Health PG",
+            "assigned_hha": "ProHealth Home Care"
+          }
+        },
+        "update": {
+          "id": "string (patient id in this mock may equal patient_id for seed data or generated id)",
+          "allowed_fields": "Any optional field above plus 'status' and 'billability_status'",
+          "example": {
+            "billability_status": "billable",
+            "current_pg": "Nightingale Visiting Nurses",
+            "assigned_hha": "Nightingale Visiting Nurses"
+          }
+        }
+      },
+      "CareCoordination": {
+        "$comment": "CPO/coordination sessions with minutes and optional billing codes.",
+        "create": {
+          "required": ["patient_id", "cpo_minutes", "session_date"],
+          "optional": ["coordination_notes", "billing_codes", "generated_by", "is_billable"],
+          "types": {
+            "patient_id": "string",
+            "cpo_minutes": "number (int)",
+            "session_date": "string (YYYY-MM-DD)",
+            "coordination_notes": "string",
+            "billing_codes": "string[] (ids of billing codes or plain codes)",
+            "generated_by": "string (e.g., manual|ai)",
+            "is_billable": "boolean"
+          },
+          "example": {
+            "patient_id": "P001",
+            "cpo_minutes": 30,
+            "session_date": "2025-09-24",
+            "coordination_notes": "Care coordination call with HHA.",
+            "billing_codes": ["bc-g0179"],
+            "generated_by": "manual",
+            "is_billable": true
+          }
+        },
+        "update": {
+          "id": "string (careCoordination id)",
+          "allowed_fields": ["cpo_minutes", "coordination_notes", "billing_codes", "session_date", "generated_by", "is_billable"],
+          "example": {
+            "cpo_minutes": 45,
+            "is_billable": true
+          }
+        }
+      },
+      "ActionItem": {
+        "$comment": "Operational tasks in Resolution Center and dashboard widgets.",
+        "create": {
+          "required": ["title", "priority", "status"],
+          "optional": ["description", "assignedTo", "dueDate", "patientId", "category"],
+          "types": {
+            "title": "string",
+            "priority": "string (low|medium|high)",
+            "status": "string (pending|in_progress|completed)",
+            "dueDate": "string (YYYY-MM-DD)"
+          },
+          "example": {
+            "title": "Care Plan Review",
+            "description": "Quarterly care plan review for patient",
+            "priority": "medium",
+            "status": "pending",
+            "assignedTo": "Jane Smith",
+            "dueDate": "2025-10-15",
+            "patientId": "P002",
+            "category": "care_plan"
+          }
+        },
+        "update": {
+          "id": "string (actionItem id)",
+          "allowed_fields": ["title", "description", "priority", "status", "assignedTo", "dueDate", "patientId", "category"],
+          "example": { "status": "completed" }
+        }
+      },
+      "PhysicianGroup": {
+        "$comment": "Physician group directory and HHA partnerships powering network views.",
+        "create": {
+          "required": ["name", "npi"],
+          "optional": ["address", "city", "state", "zip", "phone", "fax", "email", "specialties", "hha_partnerships", "network_connections"],
+          "example": {
+            "name": "Metro Health PG",
+            "npi": "1234567890",
+            "city": "Los Angeles",
+            "state": "CA",
+            "specialties": ["Internal Medicine", "Cardiology"]
+          }
+        },
+        "update": {
+          "id": "string (pg id)",
+          "allowed_fields": ["name", "npi", "address", "city", "state", "zip", "phone", "fax", "email", "specialties", "hha_partnerships", "network_connections"],
+          "example": { "specialties": ["Internal Medicine", "Cardiology", "Endocrinology"] }
+        }
+      },
+      "HomeHealthAgency": {
+        "$comment": "Home Health Agency directory; linked from patients and PGs.",
+        "create": {
+          "required": ["name", "npi"],
+          "optional": ["licenseNumber", "medicareCertified", "medicaidCertified", "accreditation", "servicesProvided", "counties", "address", "city", "state", "zip", "phone", "fax", "email"],
+          "example": {
+            "name": "ProHealth Home Care",
+            "npi": "1234567890",
+            "licenseNumber": "HHA-001-CA",
+            "medicareCertified": true,
+            "servicesProvided": ["Skilled Nursing", "PT"]
+          }
+        },
+        "update": {
+          "id": "string (hha id)",
+          "allowed_fields": ["name", "npi", "licenseNumber", "medicareCertified", "medicaidCertified", "accreditation", "servicesProvided", "counties", "address", "city", "state", "zip", "phone", "fax", "email"],
+          "example": { "servicesProvided": ["Skilled Nursing", "PT", "OT"] }
+        }
+      },
+      "BillingCode": {
+        "$comment": "Reference CPT/HCPCS codes used in CPO and billing visuals.",
+        "create": {
+          "required": ["code", "description", "category", "reimbursementRate"],
+          "optional": ["isActive", "effectiveDate"],
+          "example": {
+            "code": "G0181",
+            "description": "Recertification for Medicare-covered home health services",
+            "category": "Recertification",
+            "reimbursementRate": 95.0,
+            "isActive": true,
+            "effectiveDate": "2024-01-01"
+          }
+        },
+        "update": {
+          "id": "string (billingCode id)",
+          "allowed_fields": ["description", "category", "reimbursementRate", "isActive", "effectiveDate"],
+          "example": { "reimbursementRate": 99.5 }
+        }
+      },
+      "UserActivity": {
+        "$comment": "Audit/activity feed items for timelines and notifications.",
+        "create": {
+          "required": ["userId", "userName", "action", "targetType", "targetId", "details", "timestamp"],
+          "example": {
+            "userId": "user-001",
+            "userName": "Dr. Sarah Wilson",
+            "action": "Updated patient care plan",
+            "targetType": "patient",
+            "targetId": "P002",
+            "details": "Modified diabetes management protocol",
+            "timestamp": "2025-09-24T10:30:00Z"
+          }
+        },
+        "update": {
+          "id": "string (userActivity id)",
+          "allowed_fields": ["details"],
+          "example": { "details": "Minor corrections" }
+        }
+    },
+    "dataflows": {
+      "$comment": "How data moves through pages/components: reads, writes, relationships, and examples.",
+      "notes": "End-to-end dataflows for reading, displaying, creating, updating, deleting data, plus background automation and relationships across UI.",
+      "response_shapes": {
+        "$comment": "Standard envelopes to use when moving to a real HTTP API.",
+        "ok": {"ok": true, "data": "<payload>", "error": null},
+        "error": {"ok": false, "data": null, "error": {"code": "string", "message": "string"}}
+      },
+      "errors": {
+        "$comment": "Common error types the UI should handle and display.",
+        "validation_error": {"code": "VALIDATION_ERROR", "message": "One or more fields are invalid"},
+        "not_found": {"code": "NOT_FOUND", "message": "Record not found"},
+        "conflict": {"code": "CONFLICT", "message": "Duplicate or incompatible update"}
+      },
+      "permissions": {
+        "$comment": "Suggested role capabilities; enforce in backend and UI guards.",
+        "roles": ["admin", "physician", "nurse", "billing"],
+        "rules": {
+          "admin": ["read:*", "write:*"],
+          "physician": ["read:*", "write:Document", "write:CareCoordination"],
+          "nurse": ["read:*", "write:CareCoordination"],
+          "billing": ["read:*", "write:ActionItem"]
+        },
+        "notes": "The mock layer does not enforce RBAC, but UI should honor these intents."
+      },
+      "pages": {
+        "$comment": "Per-page data needs and side effects to inform endpoints and caching.",
+        "pages/index.jsx": {
+          "reads": ["Patient.findAll", "PhysicianGroup.findAll", "HomeHealthAgency.findAll", "UserActivity.findAll"],
+          "displays": ["high-level metrics", "recent activities", "navigation links"],
+          "creates": [],
+          "updates": [],
+          "deletes": []
+        },
+        "pages/ServicesDashboard.jsx": {
+          "reads": ["Patient.findAll", "PhysicianGroup.findAll", "HomeHealthAgency.findAll", "BillingCode.findAll"],
+          "displays": ["dashboard widgets", "metric cards", "billing breakdown"],
+          "creates": [],
+          "updates": [],
+          "deletes": []
+        },
+        "pages/PGDashboard.jsx": {
+          "reads": ["PhysicianGroup.findAll", "Patient.findAll", "HomeHealthAgency.findAll"],
+          "displays": ["PG network visualizations", "counts per HHA", "map"],
+          "creates": ["PhysicianGroup.create (optional admin flows)"],
+          "updates": ["PhysicianGroup.update (optional admin flows)"],
+          "deletes": []
+        },
+        "pages/PGDashboardNew.jsx": {
+          "reads": ["PhysicianGroup.findAll", "Patient.findAll", "HomeHealthAgency.findAll"],
+          "displays": ["enhanced PG overview", "relations", "KPIs"],
+          "creates": [],
+          "updates": [],
+          "deletes": []
+        },
+        "pages/NetworkAnalysis.jsx": {
+          "reads": ["PhysicianGroup.findAll", "HomeHealthAgency.findAll", "Patient.findAll"],
+          "displays": ["network graph", "connections", "KPIs by network"],
+          "creates": [],
+          "updates": [],
+          "deletes": []
+        },
+        "pages/PatientManagement.jsx": {
+          "reads": ["Patient.findAll", "Document.findAll", "CareCoordination.findAll", "BillingCode.findAll"],
+          "displays": ["patient table", "episode timeline", "care coordination"],
+          "creates": ["Patient.create"],
+          "updates": ["Patient.update"],
+          "deletes": []
+        },
+        "pages/DocumentIngestion.jsx": {
+          "reads": ["Patient.findAll (for selection)"],
+          "displays": ["UploadForm"],
+          "creates": ["Document.create via UploadForm", "Patient.create (if new)"],
+          "updates": ["Patient.update (enrichment)"],
+          "deletes": []
+        },
+        "pages/ResolutionCenter.jsx": {
+          "reads": ["Document.findAll", "Patient.findAll", "User.list"],
+          "displays": ["missing docs queue", "actions"],
+          "creates": ["ActionItem.create (when needed)"],
+          "updates": ["Document.update (status)", "ActionItem.update"],
+          "deletes": []
+        }
+      },
+      "ui_event_map": {
+        "$comment": "Map user actions to operations so engineers can trace cause/effect.",
+        "UploadForm.submit": [
+          "UploadFile(file)",
+          "processDocumentWithAI(file_url, json_schema, mime_type)",
+          "Document.create(documentData)",
+          "Patient.create or Patient.update (if needed)"
+        ],
+        "CPOCareCoordination.save": [
+          "if existing -> CareCoordination.update(id, data)",
+          "else -> CareCoordination.create(data)"
+        ],
+        "ResolutionCenter.autoFetch": [
+          "Attempt external retrieval (mocked)",
+          "Document.update(processing_status/status)",
+          "Optionally ActionItem.create for follow-up"
+        ],
+        "PatientTable.inlineEdit": [
+          "Patient.update(id, field changes)"
+        ]
+      },
+      "components": {
+        "$comment": "Component-level reads/writes and important UI state.",
+        "components/ingestion/UploadForm.jsx": {
+          "reads": ["PhysicianGroup.list", "HomeHealthAgency.list"],
+          "creates": [
+            {
+              "name": "UploadFile",
+              "payload": {"file": "File|Blob"},
+              "returns": {"file_url": "string"}
+            },
+            {
+              "name": "processDocumentWithAI",
+              "payload": {"file_url": "string", "json_schema": "object", "mime_type": "string"},
+              "returns": {"output": "object", "status": "completed|error"}
+            },
+            {
+              "name": "Document.create",
+              "payload_ref": "entities.Document.create"
+            },
+            {
+              "name": "Patient.create (conditional if not exists)",
+              "payload": {"patient_id": "string", "name": "string", "admission_date": "YYYY-MM-DD", "current_pg": "string", "assigned_hha": "string"}
+            }
+          ],
+          "updates": [
+            {"name": "Patient.update", "when": "patient exists and needs enrichment", "fields": ["validation_status", "billability_status", "current_pg", "assigned_hha"]}
+          ],
+          "ui_state": ["uploadState", "processingStep", "error"],
+          "displays": ["drag-drop area", "progress", "success/error banners"]
+        },
+        "components/dashboard/CPOCareCoordination.jsx": {
+          "reads": ["Patient.findById", "BillingCode.findAll", "CareCoordination.findAll"],
+          "creates": [
+            {"name": "CareCoordination.create", "payload_ref": "entities.CareCoordination.create"}
+          ],
+          "updates": [
+            {"name": "CareCoordination.update", "fields": ["cpo_minutes", "coordination_notes", "session_date", "billing_codes", "is_billable", "generated_by"]}
+          ],
+          "displays": ["minutes counter", "billing code multi-select", "billability indicator"]
+        },
+        "components/dashboard/ResolutionCenter.jsx": {
+          "reads": ["Document.findAll", "User.list"],
+          "creates": ["ActionItem.create (follow-ups)"] ,
+          "updates": ["Document.update (processing_status/status)", "ActionItem.update"],
+          "displays": ["auto-fetch button flow", "status messages"]
+        },
+        "components/dashboard/*": {
+          "reads": ["Patient.findAll", "UserActivity.findAll", "BillingCode.findAll"],
+          "displays": ["MetricCard", "BillabilityChart", "ActivityFeed", "PatientTimelineViewer"]
+        },
+        "components/map/*": {
+          "reads": ["Patient.findAll (for counts)", "PhysicianGroup.findAll", "HomeHealthAgency.findAll"],
+          "displays": ["Mapbox maps (PG/HHA overlays)"]
+        }
+      },
+      "operations": {
+        "$comment": "Reusable patterns: filtering, sorting, pagination, and CRUD.",
+        "read_patterns": [
+          {"fn": "Entity.findAll(query)", "notes": "client-side filtering supported in mock"},
+          {"fn": "Entity.findById(id)"},
+          {"fn": "Entity.list(sortBy)"}
+        ],
+        "filtering_and_sorting": {
+          "query_matching": "String fields support case-insensitive partial match; non-strings use strict equality",
+          "sort_example": "Entity.list('-created_date') sorts by created_date descending"
+        },
+        "pagination": {
+          "fn": "Entity.findWithPagination(query, page, limit)",
+          "returns": {"data": [], "pagination": {"page": 1, "limit": 10, "total": 100, "totalPages": 10}}
+        },
+        "create_patterns": [
+          {"fn": "Entity.create(payload)", "auto_fields": ["id (auto if missing)", "created_date", "updated_date"]}
+        ],
+        "update_patterns": [
+          {"fn": "Entity.update(id, updates)", "auto_fields": ["updated_date"]}
+        ],
+        "delete_patterns": [
+          {"fn": "Entity.delete(id)"}
+        ]
+      },
+      "background_processes": {
+        "$comment": "Automated or multi-step flows triggered by user actions.",
+        "document_ingestion": {
+          "steps": [
+            "UploadFile(file) -> file_url",
+            "processDocumentWithAI({file_url, json_schema, mime_type}) -> output",
+            "Document.create({...extracted_data: output, processing_status: 'extracted'})",
+            "Optionally Patient.create or Patient.update to ensure patient exists"
+          ]
+        },
+        "notifications_email_mock": {
+          "trigger": "manual or future hooks",
+          "action": "Core.SendEmail(to, subject, body)"
+        },
+        "analytics": {
+          "source": "utils/analytics.js",
+          "notes": "page/component events can be emitted here (mock)"
+        }
+      },
+      "relationships": {
+        "$comment": "Entity relationships and keys to join on.",
+        "Patient -> Document": {"key": "patient_id", "cardinality": "1-to-many"},
+        "Patient -> CareCoordination": {"key": "patientId or patient_id (component uses patient_id)", "cardinality": "1-to-many"},
+        "Patient -> PhysicianGroup": {"fields": ["physicianGroupId", "current_pg"], "notes": "both id and display name used"},
+        "Patient -> HomeHealthAgency": {"fields": ["homeHealthAgencyId", "assigned_hha"]},
+        "PhysicianGroup <-> HomeHealthAgency": {"fields": ["hha_partnerships", "connectedHHAs"], "type": "many-to-many (mock)"}
+      },
+      "ui_bindings": {
+        "$comment": "Which UI components consume which data.",
+        "MetricCard.jsx": {"inputs": ["counts from Patient.findAll", "billability_status breakdown"]},
+        "BillabilityChart.jsx": {"inputs": ["Patient.billability_status", "CPT info for legends"]},
+        "ActivityFeed.jsx": {"inputs": ["UserActivity.findAll"]},
+        "PatientTimelineViewer.jsx": {"inputs": ["Document.findAll by patient_id"]},
+        "MyTasksWidget.jsx": {"inputs": ["ActionItem.findAll by user"]}
+      },
+      "end_to_end_examples": {
+        "$comment": "Concrete scenarios to validate full flows end to end.",
+        "ingest_document": {
+          "input": {
+            "file": "<File>",
+            "patient_id": "P001",
+            "document_type": "soc",
+            "title": "Start of Care Assessment",
+            "physician": "Dr. Sarah Wilson",
+            "episode_date": "2024-12-01"
+          },
+          "steps": [
+            "UploadFile(file) -> file_url",
+            "processDocumentWithAI({file_url, json_schema, mime_type}) -> output",
+            "Document.create({patient_id, document_type, title, file_url, processing_status: 'extracted', extracted_data: output, physician, episode_date, date_received: now})",
+            "if no patient -> Patient.create minimal stub"
+          ],
+          "result": {"ok": true, "data": {"document_id": "doc-..."}}
+        },
+        "save_cpo_session": {
+          "input": {"patient_id": "P001", "cpo_minutes": 30, "session_date": "2025-09-24", "billing_codes": ["bc-g0179"], "coordination_notes": "Call with HHA"},
+          "steps": ["if exists -> CareCoordination.update", "else -> CareCoordination.create"],
+          "result": {"ok": true}
+        },
+        "resolve_missing_doc": {
+          "input": {"patient_id": "P003"},
+          "steps": ["try auto-fetch (mock)", "Document.update processing_status/status", "optional ActionItem.create"],
+          "result": {"ok": true}
+        }
+      },
+      "deployment_notes": {
+        "$comment": "Guidance for replacing mocks with a real backend.",
+        "build": "Vite + React; see package.json scripts",
+        "env": "All data is in-memory mocks; replace with real API when ready",
+        "data_migration": "When moving to real backend, keep field names and enums to minimize refactor"
+      }
+    }
+    }
+  }

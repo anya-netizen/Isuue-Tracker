@@ -1,0 +1,1154 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { 
+  MapPin, 
+  AlertTriangle, 
+  CheckCircle, 
+  Clock, 
+  Users, 
+  DollarSign, 
+  TrendingUp, 
+  TrendingDown,
+  Activity,
+  Eye,
+  X,
+  Zap,
+  Heart,
+  Target,
+  Shield
+} from 'lucide-react';
+
+const InteractiveUSMap = ({ pgs, patients, onPGSelect }) => {
+  const mapRef = useRef(null);
+  const [selectedPG, setSelectedPG] = useState(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [clusteredView, setClusteredView] = useState(true);
+  const [filterLevel, setFilterLevel] = useState('all'); // all, critical, needs-attention, good
+  const [viewType, setViewType] = useState('pgs'); // pgs, msa, gsa, county, divisions, heatmap
+  const [map, setMap] = useState(null);
+  const [markers, setMarkers] = useState([]);
+  const [mapError, setMapError] = useState(null);
+  const [isMapboxAvailable, setIsMapboxAvailable] = useState(false);
+
+  // Geographic divisions data
+  const usDivisions = {
+    'New England': { states: ['CT', 'ME', 'MA', 'NH', 'RI', 'VT'], color: '#3B82F6' },
+    'Middle Atlantic': { states: ['NJ', 'NY', 'PA'], color: '#8B5CF6' },
+    'East North Central': { states: ['IL', 'IN', 'MI', 'OH', 'WI'], color: '#10B981' },
+    'West North Central': { states: ['IA', 'KS', 'MN', 'MO', 'NE', 'ND', 'SD'], color: '#F59E0B' },
+    'South Atlantic': { states: ['DE', 'FL', 'GA', 'MD', 'NC', 'SC', 'VA', 'WV'], color: '#EF4444' },
+    'East South Central': { states: ['AL', 'KY', 'MS', 'TN'], color: '#EC4899' },
+    'West South Central': { states: ['AR', 'LA', 'OK', 'TX'], color: '#06B6D4' },
+    'Mountain': { states: ['AZ', 'CO', 'ID', 'MT', 'NV', 'NM', 'UT', 'WY'], color: '#84CC16' },
+    'Pacific': { states: ['AK', 'CA', 'HI', 'OR', 'WA'], color: '#F97316' }
+  };
+
+  // Major MSAs
+  const majorMSAs = [
+    { name: 'New York-Newark-Jersey City', center: [-74.0, 40.7], states: ['NY', 'NJ', 'PA'] },
+    { name: 'Los Angeles-Long Beach-Anaheim', center: [-118.2, 34.0], states: ['CA'] },
+    { name: 'Chicago-Naperville-Elgin', center: [-87.6, 41.9], states: ['IL', 'IN', 'WI'] },
+    { name: 'Dallas-Fort Worth-Arlington', center: [-96.8, 32.8], states: ['TX'] },
+    { name: 'Houston-The Woodlands-Sugar Land', center: [-95.4, 29.8], states: ['TX'] },
+    { name: 'Washington-Arlington-Alexandria', center: [-77.0, 38.9], states: ['DC', 'MD', 'VA', 'WV'] },
+    { name: 'Miami-Fort Lauderdale-West Palm Beach', center: [-80.2, 25.8], states: ['FL'] },
+    { name: 'Philadelphia-Camden-Wilmington', center: [-75.2, 39.9], states: ['PA', 'NJ', 'DE', 'MD'] },
+    { name: 'Atlanta-Sandy Springs-Roswell', center: [-84.4, 33.7], states: ['GA'] },
+    { name: 'Boston-Cambridge-Newton', center: [-71.1, 42.4], states: ['MA', 'NH'] },
+    { name: 'San Francisco-Oakland-Hayward', center: [-122.4, 37.8], states: ['CA'] },
+    { name: 'Phoenix-Mesa-Scottsdale', center: [-112.1, 33.4], states: ['AZ'] },
+    { name: 'Riverside-San Bernardino-Ontario', center: [-117.4, 34.1], states: ['CA'] },
+    { name: 'Detroit-Warren-Dearborn', center: [-83.0, 42.3], states: ['MI'] },
+    { name: 'Seattle-Tacoma-Bellevue', center: [-122.3, 47.6], states: ['WA'] }
+  ];
+
+  // Check if Mapbox is available
+  useEffect(() => {
+    if (window.mapboxgl) {
+      setIsMapboxAvailable(true);
+      console.log('Mapbox GL JS loaded successfully');
+    } else {
+      console.error('Mapbox GL JS not loaded');
+      setMapError('Mapbox GL JS library not found');
+    }
+  }, []);
+
+  // Debug log
+  useEffect(() => {
+    console.log('InteractiveUSMap props:', { pgsCount: pgs?.length, patientsCount: patients?.length });
+  }, [pgs, patients]);
+
+  // Calculate PG performance and attention level
+  const calculatePGMetrics = (pg) => {
+    const pgPatients = patients.filter(p => p.physician_group_id === pg.id);
+    const totalRevenue = pgPatients.reduce((sum, p) => sum + (p.monthly_revenue || 0), 0);
+    const avgBillability = pgPatients.reduce((sum, p) => sum + (p.billability_score || 0), 0) / pgPatients.length || 0;
+    const activePatients = pgPatients.filter(p => p.status === 'Active').length;
+    const riskPatients = pgPatients.filter(p => p.risk_level === 'High').length;
+    
+    // Performance scoring algorithm
+    const revenueScore = Math.min((totalRevenue / 50000) * 100, 100);
+    const billabilityScore = avgBillability;
+    const patientScore = Math.min((activePatients / 20) * 100, 100);
+    const riskScore = Math.max(100 - (riskPatients / activePatients) * 100, 0) || 100;
+    
+    const overallScore = (revenueScore + billabilityScore + patientScore + riskScore) / 4;
+    
+    let attentionLevel = 'good';
+    let color = '#10B981'; // green
+    let urgency = 'Low';
+    
+    if (overallScore < 40) {
+      attentionLevel = 'critical';
+      color = '#EF4444'; // red
+      urgency = 'High';
+    } else if (overallScore < 70) {
+      attentionLevel = 'needs-attention';
+      color = '#F59E0B'; // yellow
+      urgency = 'Medium';
+    }
+    
+    return {
+      ...pg,
+      metrics: {
+        overallScore: Math.round(overallScore),
+        totalRevenue,
+        avgBillability: Math.round(avgBillability),
+        activePatients,
+        riskPatients,
+        attentionLevel,
+        color,
+        urgency,
+        patientCount: pgPatients.length,
+        issues: generateIssues(overallScore, riskPatients, avgBillability, totalRevenue),
+        recommendations: generateRecommendations(overallScore, riskPatients, avgBillability)
+      }
+    };
+  };
+
+  const generateIssues = (score, riskPatients, billability, revenue) => {
+    const issues = [];
+    if (score < 40) {
+      if (billability < 60) issues.push("Low billability scores affecting revenue");
+      if (riskPatients > 3) issues.push("High number of at-risk patients");
+      if (revenue < 20000) issues.push("Revenue significantly below target");
+    } else if (score < 70) {
+      if (billability < 75) issues.push("Billability could be improved");
+      if (riskPatients > 1) issues.push("Some patients at risk");
+      if (revenue < 35000) issues.push("Revenue below optimal levels");
+    }
+    return issues;
+  };
+
+  const generateRecommendations = (score, riskPatients, billability) => {
+    const recommendations = [];
+    if (score < 40) {
+      recommendations.push("Immediate intervention required");
+      recommendations.push("Implement care coordination program");
+      recommendations.push("Review billing processes");
+      recommendations.push("Patient risk assessment needed");
+    } else if (score < 70) {
+      recommendations.push("Focus on care quality improvements");
+      recommendations.push("Optimize billing workflows");
+      recommendations.push("Monitor at-risk patients closely");
+    } else {
+      recommendations.push("Maintain current performance");
+      recommendations.push("Share best practices with other PGs");
+    }
+    return recommendations;
+  };
+
+  // Enhanced PG data with metrics
+  const enhancedPGs = pgs
+    .filter(pg => pg.coordinates && pg.coordinates.lat && pg.coordinates.lng) // Only PGs with valid coordinates
+    .map(calculatePGMetrics);
+  const filteredPGs = enhancedPGs.filter(pg => 
+    filterLevel === 'all' || pg.metrics.attentionLevel === filterLevel
+  );
+
+  // Initialize map
+  useEffect(() => {
+    if (!isMapboxAvailable || !mapRef.current) return;
+
+    const mapboxgl = window.mapboxgl;
+    // Using your valid Mapbox access token
+    mapboxgl.accessToken = 'pk.eyJ1IjoicmlzaGkyMDAzIiwiYSI6ImNtZng1YTRubzA4c2cya3NiaHZvMjBlbmEifQ.CLgQYhT7K6yIth5jClvaKQ';
+
+    try {
+      const newMap = new mapboxgl.Map({
+        container: mapRef.current,
+        style: 'mapbox://styles/mapbox/satellite-streets-v12',
+        center: [-98.5795, 39.8283], // Center of US
+        zoom: 4,
+        pitch: 0,
+        bearing: 0,
+        maxBounds: [
+          [-180, 15], // Southwest coordinates
+          [-30, 72]   // Northeast coordinates (focus on US)
+        ]
+      });
+
+      newMap.on('load', () => {
+        console.log('Map loaded successfully');
+        setMapLoaded(true);
+        setMap(newMap);
+        setMapError(null);
+        
+        // Add US state boundaries and division layers
+        addGeographicLayers(newMap);
+      });
+
+      newMap.on('error', (e) => {
+        console.error('Map error:', e);
+        setMapError(`Map initialization error: ${e.error.message || 'Unknown error'}`);
+      });
+
+      return () => {
+        if (newMap) newMap.remove();
+      };
+    } catch (error) {
+      console.error('Error initializing map:', error);
+      setMapError(`Failed to initialize map: ${error.message}`);
+    }
+  }, [isMapboxAvailable]);
+
+  // Add geographic boundary layers
+  const addGeographicLayers = (map) => {
+    // Add state boundaries
+    map.addSource('states', {
+      type: 'geojson',
+      data: 'https://raw.githubusercontent.com/holtzy/D3-graph-gallery/master/DATA/us-states.geojson'
+    });
+
+    map.addLayer({
+      id: 'states-layer',
+      type: 'line',
+      source: 'states',
+      paint: {
+        'line-color': '#627BC1',
+        'line-width': 1,
+        'line-opacity': 0.5
+      }
+    });
+
+    // Add county boundaries (simplified for performance)
+    map.addSource('counties', {
+      type: 'vector',
+      url: 'mapbox://mapbox.82pkq93d'
+    });
+
+    map.addLayer({
+      id: 'counties-layer',
+      type: 'line',
+      source: 'counties',
+      'source-layer': 'original',
+      paint: {
+        'line-color': '#627BC1',
+        'line-width': 0.5,
+        'line-opacity': 0.3
+      }
+    });
+  };
+
+  // Add markers when map loads or data changes
+  useEffect(() => {
+    if (!map || !mapLoaded) return;
+
+    // Clear existing markers
+    markers.forEach(marker => marker.remove());
+    setMarkers([]);
+
+    const newMarkers = [];
+
+    if (viewType === 'heatmap') {
+      addHeatmapLayer();
+    } else if (viewType === 'divisions') {
+      addDivisionMarkers(newMarkers);
+    } else if (viewType === 'msa') {
+      addMSAMarkers(newMarkers);
+    } else if (viewType === 'county') {
+      addCountyHeatmap();
+    } else if (viewType === 'gsa') {
+      addGSAMarkers(newMarkers);
+    } else {
+      // Regular PG markers
+      if (clusteredView && filteredPGs.length > 50) {
+        const clusters = createClusters(filteredPGs);
+        clusters.forEach(cluster => {
+          const marker = createClusterMarker(cluster, map);
+          newMarkers.push(marker);
+        });
+      } else {
+        filteredPGs.forEach(pg => {
+          const marker = createIndividualMarker(pg, map);
+          newMarkers.push(marker);
+        });
+      }
+    }
+
+    setMarkers(newMarkers);
+  }, [map, mapLoaded, filteredPGs, clusteredView, viewType]);
+
+  // Add heatmap layer for density visualization
+  const addHeatmapLayer = () => {
+    if (!map.getSource('pg-heatmap')) {
+      const heatmapData = {
+        type: 'FeatureCollection',
+        features: enhancedPGs.map(pg => ({
+          type: 'Feature',
+          properties: {
+            urgency: pg.metrics.attentionLevel === 'critical' ? 3 : 
+                    pg.metrics.attentionLevel === 'needs-attention' ? 2 : 1,
+            score: pg.metrics.overallScore
+          },
+          geometry: {
+            type: 'Point',
+            coordinates: [pg.coordinates.lng, pg.coordinates.lat]
+          }
+        }))
+      };
+
+      map.addSource('pg-heatmap', {
+        type: 'geojson',
+        data: heatmapData
+      });
+
+      map.addLayer({
+        id: 'pg-heatmap-layer',
+        type: 'heatmap',
+        source: 'pg-heatmap',
+        paint: {
+          'heatmap-weight': ['get', 'urgency'],
+          'heatmap-intensity': ['interpolate', ['linear'], ['zoom'], 0, 1, 9, 3],
+          'heatmap-color': [
+            'interpolate',
+            ['linear'],
+            ['heatmap-density'],
+            0, 'rgba(33,102,172,0)',
+            0.2, 'rgb(103,169,207)',
+            0.4, 'rgb(209,229,240)',
+            0.6, 'rgb(253,219,199)',
+            0.8, 'rgb(239,138,98)',
+            1, 'rgb(178,24,43)'
+          ],
+          'heatmap-radius': ['interpolate', ['linear'], ['zoom'], 0, 2, 9, 20],
+          'heatmap-opacity': ['interpolate', ['linear'], ['zoom'], 7, 1, 9, 0]
+        }
+      });
+    }
+  };
+
+  // Add division-based markers
+  const addDivisionMarkers = (newMarkers) => {
+    Object.entries(usDivisions).forEach(([divisionName, division]) => {
+      const divisionPGs = enhancedPGs.filter(pg => division.states.includes(pg.address.state));
+      if (divisionPGs.length === 0) return;
+
+      const avgLat = divisionPGs.reduce((sum, pg) => sum + pg.coordinates.lat, 0) / divisionPGs.length;
+      const avgLng = divisionPGs.reduce((sum, pg) => sum + pg.coordinates.lng, 0) / divisionPGs.length;
+      
+      const criticalCount = divisionPGs.filter(pg => pg.metrics.attentionLevel === 'critical').length;
+      const needsAttentionCount = divisionPGs.filter(pg => pg.metrics.attentionLevel === 'needs-attention').length;
+      const goodCount = divisionPGs.filter(pg => pg.metrics.attentionLevel === 'good').length;
+
+      const marker = createDivisionMarker({
+        name: divisionName,
+        coordinates: { lat: avgLat, lng: avgLng },
+        stats: { critical: criticalCount, needsAttention: needsAttentionCount, good: goodCount },
+        totalPGs: divisionPGs.length,
+        color: division.color
+      });
+
+      newMarkers.push(marker);
+    });
+  };
+
+  // Add MSA markers
+  const addMSAMarkers = (newMarkers) => {
+    majorMSAs.forEach(msa => {
+      const msaPGs = enhancedPGs.filter(pg => {
+        const distance = getDistance(pg.coordinates, { lat: msa.center[1], lng: msa.center[0] });
+        return distance < 50; // Within 50 miles of MSA center
+      });
+
+      if (msaPGs.length === 0) return;
+
+      const criticalCount = msaPGs.filter(pg => pg.metrics.attentionLevel === 'critical').length;
+      const needsAttentionCount = msaPGs.filter(pg => pg.metrics.attentionLevel === 'needs-attention').length;
+      const goodCount = msaPGs.filter(pg => pg.metrics.attentionLevel === 'good').length;
+
+      const marker = createMSAMarker({
+        name: msa.name,
+        coordinates: { lat: msa.center[1], lng: msa.center[0] },
+        stats: { critical: criticalCount, needsAttention: needsAttentionCount, good: goodCount },
+        totalPGs: msaPGs.length
+      });
+
+      newMarkers.push(marker);
+    });
+  };
+
+  // Add GSA (General Services Administration regions) markers
+  const addGSAMarkers = (newMarkers) => {
+    const gsaRegions = {
+      'GSA Region 1': { states: ['CT', 'ME', 'MA', 'NH', 'RI', 'VT'], center: [42.3, -71.1] },
+      'GSA Region 2': { states: ['NJ', 'NY'], center: [40.7, -74.0] },
+      'GSA Region 3': { states: ['DE', 'MD', 'PA', 'VA', 'WV'], center: [39.0, -77.0] },
+      'GSA Region 4': { states: ['AL', 'FL', 'GA', 'KY', 'MS', 'NC', 'SC', 'TN'], center: [33.7, -84.4] },
+      'GSA Region 5': { states: ['IL', 'IN', 'MI', 'MN', 'OH', 'WI'], center: [41.9, -87.6] },
+      'GSA Region 6': { states: ['AR', 'LA', 'NM', 'OK', 'TX'], center: [32.8, -96.8] },
+      'GSA Region 7': { states: ['IA', 'KS', 'MO', 'NE'], center: [39.1, -94.6] },
+      'GSA Region 8': { states: ['CO', 'MT', 'ND', 'SD', 'UT', 'WY'], center: [39.7, -104.9] },
+      'GSA Region 9': { states: ['AZ', 'CA', 'HI', 'NV'], center: [34.0, -118.2] },
+      'GSA Region 10': { states: ['AK', 'ID', 'OR', 'WA'], center: [47.6, -122.3] }
+    };
+
+    Object.entries(gsaRegions).forEach(([regionName, region]) => {
+      const regionPGs = enhancedPGs.filter(pg => region.states.includes(pg.address.state));
+      if (regionPGs.length === 0) return;
+
+      const criticalCount = regionPGs.filter(pg => pg.metrics.attentionLevel === 'critical').length;
+      const needsAttentionCount = regionPGs.filter(pg => pg.metrics.attentionLevel === 'needs-attention').length;
+      const goodCount = regionPGs.filter(pg => pg.metrics.attentionLevel === 'good').length;
+
+      const marker = createGSAMarker({
+        name: regionName,
+        coordinates: { lat: region.center[0], lng: region.center[1] },
+        stats: { critical: criticalCount, needsAttention: needsAttentionCount, good: goodCount },
+        totalPGs: regionPGs.length
+      });
+
+      newMarkers.push(marker);
+    });
+  };
+
+  // Calculate distance between two coordinates (Haversine formula)
+  const getDistance = (coord1, coord2) => {
+    const R = 3959; // Radius of Earth in miles
+    const dLat = (coord2.lat - coord1.lat) * Math.PI / 180;
+    const dLng = (coord2.lng - coord1.lng) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+      Math.cos(coord1.lat * Math.PI / 180) * Math.cos(coord2.lat * Math.PI / 180) *
+      Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  };
+
+  const createClusters = (pgs) => {
+    // Simple grid-based clustering
+    const gridSize = 2; // degrees
+    const clusters = {};
+    
+    pgs.forEach(pg => {
+      const gridLat = Math.floor(pg.coordinates.lat / gridSize) * gridSize;
+      const gridLng = Math.floor(pg.coordinates.lng / gridSize) * gridSize;
+      const key = `${gridLat},${gridLng}`;
+      
+      if (!clusters[key]) {
+        clusters[key] = {
+          lat: gridLat + gridSize / 2,
+          lng: gridLng + gridSize / 2,
+          pgs: [],
+          counts: { critical: 0, 'needs-attention': 0, good: 0 }
+        };
+      }
+      
+      clusters[key].pgs.push(pg);
+      clusters[key].counts[pg.metrics.attentionLevel]++;
+    });
+    
+    return Object.values(clusters);
+  };
+
+  const createDivisionMarker = (division) => {
+    const el = document.createElement('div');
+    el.className = 'division-marker';
+    el.style.cssText = `
+      width: 60px;
+      height: 60px;
+      background: ${division.color};
+      border: 3px solid white;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    `;
+    
+    el.innerHTML = `
+      <div>${division.totalPGs}</div>
+      <div style="font-size: 8px;">PGs</div>
+    `;
+    
+    el.addEventListener('mouseenter', () => {
+      el.style.transform = 'scale(1.1)';
+    });
+    
+    el.addEventListener('mouseleave', () => {
+      el.style.transform = 'scale(1)';
+    });
+    
+    const popup = new window.mapboxgl.Popup({
+      offset: 25,
+      closeButton: false,
+      closeOnClick: false
+    }).setHTML(`
+      <div class="p-3">
+        <div class="font-semibold text-sm">${division.name}</div>
+        <div class="grid grid-cols-3 gap-2 mt-2 text-xs">
+          <div class="text-center">
+            <div class="w-3 h-3 bg-red-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${division.stats.critical}</div>
+            <div>Critical</div>
+          </div>
+          <div class="text-center">
+            <div class="w-3 h-3 bg-yellow-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${division.stats.needsAttention}</div>
+            <div>Attention</div>
+          </div>
+          <div class="text-center">
+            <div class="w-3 h-3 bg-green-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${division.stats.good}</div>
+            <div>Good</div>
+          </div>
+        </div>
+        <div class="text-xs mt-2">Total PGs: ${division.totalPGs}</div>
+      </div>
+    `);
+    
+    return new window.mapboxgl.Marker(el)
+      .setLngLat([division.coordinates.lng, division.coordinates.lat])
+      .setPopup(popup)
+      .addTo(map);
+  };
+
+  const createMSAMarker = (msa) => {
+    const el = document.createElement('div');
+    el.className = 'msa-marker';
+    
+    // Determine color based on critical count
+    let bgColor = '#10B981'; // green
+    if (msa.stats.critical > 2) bgColor = '#EF4444'; // red
+    else if (msa.stats.critical > 0 || msa.stats.needsAttention > 3) bgColor = '#F59E0B'; // yellow
+    
+    el.style.cssText = `
+      width: 50px;
+      height: 50px;
+      background: ${bgColor};
+      border: 2px solid white;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    `;
+    
+    el.innerHTML = `
+      <div>${msa.totalPGs}</div>
+      <div style="font-size: 8px;">MSA</div>
+    `;
+    
+    el.addEventListener('mouseenter', () => {
+      el.style.transform = 'scale(1.1)';
+    });
+    
+    el.addEventListener('mouseleave', () => {
+      el.style.transform = 'scale(1)';
+    });
+    
+    const popup = new window.mapboxgl.Popup({
+      offset: 25,
+      closeButton: false,
+      closeOnClick: false
+    }).setHTML(`
+      <div class="p-3 max-w-xs">
+        <div class="font-semibold text-sm">${msa.name}</div>
+        <div class="grid grid-cols-3 gap-2 mt-2 text-xs">
+          <div class="text-center">
+            <div class="w-3 h-3 bg-red-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${msa.stats.critical}</div>
+            <div>Critical</div>
+          </div>
+          <div class="text-center">
+            <div class="w-3 h-3 bg-yellow-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${msa.stats.needsAttention}</div>
+            <div>Attention</div>
+          </div>
+          <div class="text-center">
+            <div class="w-3 h-3 bg-green-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${msa.stats.good}</div>
+            <div>Good</div>
+          </div>
+        </div>
+        <div class="text-xs mt-2">Total PGs: ${msa.totalPGs}</div>
+      </div>
+    `);
+    
+    return new window.mapboxgl.Marker(el)
+      .setLngLat([msa.coordinates.lng, msa.coordinates.lat])
+      .setPopup(popup)
+      .addTo(map);
+  };
+
+  const createGSAMarker = (gsa) => {
+    const el = document.createElement('div');
+    el.className = 'gsa-marker';
+    
+    // Determine color based on critical count
+    let bgColor = '#10B981'; // green
+    if (gsa.stats.critical > 3) bgColor = '#EF4444'; // red
+    else if (gsa.stats.critical > 1 || gsa.stats.needsAttention > 5) bgColor = '#F59E0B'; // yellow
+    
+    el.style.cssText = `
+      width: 55px;
+      height: 55px;
+      background: ${bgColor};
+      border: 3px solid white;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 10px;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    `;
+    
+    el.innerHTML = `
+      <div>${gsa.totalPGs}</div>
+      <div style="font-size: 8px;">GSA</div>
+    `;
+    
+    el.addEventListener('mouseenter', () => {
+      el.style.transform = 'scale(1.1)';
+    });
+    
+    el.addEventListener('mouseleave', () => {
+      el.style.transform = 'scale(1)';
+    });
+    
+    const popup = new window.mapboxgl.Popup({
+      offset: 25,
+      closeButton: false,
+      closeOnClick: false
+    }).setHTML(`
+      <div class="p-3">
+        <div class="font-semibold text-sm">${gsa.name}</div>
+        <div class="grid grid-cols-3 gap-2 mt-2 text-xs">
+          <div class="text-center">
+            <div class="w-3 h-3 bg-red-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${gsa.stats.critical}</div>
+            <div>Critical</div>
+          </div>
+          <div class="text-center">
+            <div class="w-3 h-3 bg-yellow-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${gsa.stats.needsAttention}</div>
+            <div>Attention</div>
+          </div>
+          <div class="text-center">
+            <div class="w-3 h-3 bg-green-500 rounded-full mx-auto mb-1"></div>
+            <div class="font-medium">${gsa.stats.good}</div>
+            <div>Good</div>
+          </div>
+        </div>
+        <div class="text-xs mt-2">Total PGs: ${gsa.totalPGs}</div>
+      </div>
+    `);
+    
+    return new window.mapboxgl.Marker(el)
+      .setLngLat([gsa.coordinates.lng, gsa.coordinates.lat])
+      .setPopup(popup)
+      .addTo(map);
+  };
+    const total = cluster.pgs.length;
+    const critical = cluster.counts.critical;
+    const needsAttention = cluster.counts['needs-attention'];
+    
+    // Determine cluster color based on priority
+    let clusterColor = '#10B981';
+    if (critical > 0) clusterColor = '#EF4444';
+    else if (needsAttention > 0) clusterColor = '#F59E0B';
+    
+    const el = document.createElement('div');
+    el.className = 'cluster-marker';
+    el.style.cssText = `
+      width: ${Math.max(40, Math.min(80, total * 5))}px;
+      height: ${Math.max(40, Math.min(80, total * 5))}px;
+      background: ${clusterColor};
+      border: 3px solid white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: ${total > 99 ? '12px' : '14px'};
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    `;
+    el.textContent = total;
+    
+    el.addEventListener('mouseenter', () => {
+      el.style.transform = 'scale(1.1)';
+    });
+    
+    el.addEventListener('mouseleave', () => {
+      el.style.transform = 'scale(1)';
+    });
+    
+    el.addEventListener('click', () => {
+      // Zoom to cluster and show individual markers
+      map.flyTo({
+        center: [cluster.lng, cluster.lat],
+        zoom: Math.min(map.getZoom() + 3, 12),
+        duration: 1000
+      });
+    });
+    
+    return new window.mapboxgl.Marker(el)
+      .setLngLat([cluster.lng, cluster.lat])
+      .addTo(map);
+  };
+
+  const createIndividualMarker = (pg, map) => {
+    const el = document.createElement('div');
+    el.className = 'pg-marker';
+    el.style.cssText = `
+      width: 24px;
+      height: 24px;
+      background: ${pg.metrics.color};
+      border: 2px solid white;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      transition: all 0.2s ease;
+      position: relative;
+    `;
+    
+    // Add pulsing animation for critical PGs
+    if (pg.metrics.attentionLevel === 'critical') {
+      el.style.animation = 'pulse 2s infinite';
+    }
+    
+    el.addEventListener('mouseenter', () => {
+      el.style.transform = 'scale(1.3)';
+      el.style.zIndex = '1000';
+    });
+    
+    el.addEventListener('mouseleave', () => {
+      el.style.transform = 'scale(1)';
+      el.style.zIndex = 'auto';
+    });
+    
+    el.addEventListener('click', () => {
+      setSelectedPG(pg);
+    });
+    
+    // Create popup on hover
+    const popup = new window.mapboxgl.Popup({
+      offset: 25,
+      closeButton: false,
+      closeOnClick: false,
+      className: 'pg-popup'
+    }).setHTML(`
+      <div class="p-3">
+        <div class="font-semibold text-sm">${pg.name}</div>
+        <div class="text-xs text-gray-600 mt-1">${pg.address.city}, ${pg.address.state}</div>
+        <div class="flex items-center gap-2 mt-2">
+          <div class="w-2 h-2 rounded-full" style="background: ${pg.metrics.color}"></div>
+          <span class="text-xs capitalize">${pg.metrics.attentionLevel.replace('-', ' ')}</span>
+        </div>
+        <div class="text-xs mt-1">Score: ${pg.metrics.overallScore}/100</div>
+        <div class="text-xs">Patients: ${pg.metrics.activePatients}</div>
+      </div>
+    `);
+    
+    const marker = new window.mapboxgl.Marker(el)
+      .setLngLat([pg.coordinates.lng, pg.coordinates.lat])
+      .setPopup(popup)
+      .addTo(map);
+    
+    return marker;
+  };
+
+  const createClusterMarker = (cluster, map) => {
+    const total = cluster.pgs.length;
+    const critical = cluster.counts.critical;
+    const needsAttention = cluster.counts['needs-attention'];
+    
+    // Determine cluster color based on priority
+    let clusterColor = '#10B981';
+    if (critical > 0) clusterColor = '#EF4444';
+    else if (needsAttention > 0) clusterColor = '#F59E0B';
+    
+    const el = document.createElement('div');
+    el.className = 'cluster-marker';
+    el.style.cssText = `
+      width: ${Math.max(40, Math.min(80, total * 5))}px;
+      height: ${Math.max(40, Math.min(80, total * 5))}px;
+      background: ${clusterColor};
+      border: 3px solid white;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: ${total > 99 ? '12px' : '14px'};
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      transition: transform 0.2s ease;
+    `;
+    el.textContent = total;
+    
+    el.addEventListener('mouseenter', () => {
+      el.style.transform = 'scale(1.1)';
+    });
+    
+    el.addEventListener('mouseleave', () => {
+      el.style.transform = 'scale(1)';
+    });
+    
+    el.addEventListener('click', () => {
+      // Zoom to cluster and show individual markers
+      map.flyTo({
+        center: [cluster.lng, cluster.lat],
+        zoom: Math.min(map.getZoom() + 3, 12),
+        duration: 1000
+      });
+    });
+    
+    return new window.mapboxgl.Marker(el)
+      .setLngLat([cluster.lng, cluster.lat])
+      .addTo(map);
+  };
+
+  // Calculate attention level statistics
+  const getAttentionStats = () => {
+    const stats = enhancedPGs.reduce((acc, pg) => {
+      acc[pg.metrics.attentionLevel]++;
+      return acc;
+    }, { critical: 0, 'needs-attention': 0, good: 0 });
+    
+    return stats;
+  };
+
+  const stats = getAttentionStats();
+
+  return (
+    <div className="w-full h-full relative">
+      {/* Add CSS for animations */}
+      <style>{`
+        @keyframes pulse {
+          0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+          70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+          100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .pg-popup .mapboxgl-popup-content {
+          border-radius: 8px;
+          box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+      `}</style>
+
+      {/* Control Panel */}
+      <Card className="absolute top-4 left-4 z-10 w-80 bg-white/95 backdrop-blur-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MapPin className="w-5 h-5" />
+            PG Network Overview
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {/* View Type Selector */}
+          <div className="space-y-2">
+            <div className="text-sm font-medium">View Type:</div>
+            <Select value={viewType} onValueChange={setViewType}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pgs">Individual PGs</SelectItem>
+                <SelectItem value="heatmap">Heatmap</SelectItem>
+                <SelectItem value="divisions">US Census Divisions</SelectItem>
+                <SelectItem value="msa">Metropolitan Areas (MSA)</SelectItem>
+                <SelectItem value="gsa">GSA Regions</SelectItem>
+                <SelectItem value="county">Counties</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Stats */}
+          <div className="grid grid-cols-3 gap-2 text-sm">
+            <div className="text-center p-2 bg-red-50 rounded">
+              <div className="font-bold text-red-600">{stats.critical}</div>
+              <div className="text-red-500">Critical</div>
+            </div>
+            <div className="text-center p-2 bg-yellow-50 rounded">
+              <div className="font-bold text-yellow-600">{stats['needs-attention']}</div>
+              <div className="text-yellow-500">Needs Attention</div>
+            </div>
+            <div className="text-center p-2 bg-green-50 rounded">
+              <div className="font-bold text-green-600">{stats.good}</div>
+              <div className="text-green-500">Performing Well</div>
+            </div>
+          </div>
+
+          {/* Filters */}
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Filter by Status:</div>
+            <div className="flex flex-wrap gap-2">
+              <Badge 
+                variant={filterLevel === 'all' ? 'default' : 'outline'}
+                className="cursor-pointer"
+                onClick={() => setFilterLevel('all')}
+              >
+                All ({enhancedPGs.length})
+              </Badge>
+              <Badge 
+                variant={filterLevel === 'critical' ? 'destructive' : 'outline'}
+                className="cursor-pointer"
+                onClick={() => setFilterLevel('critical')}
+              >
+                Critical ({stats.critical})
+              </Badge>
+              <Badge 
+                variant={filterLevel === 'needs-attention' ? 'secondary' : 'outline'}
+                className="cursor-pointer bg-yellow-500 hover:bg-yellow-600"
+                onClick={() => setFilterLevel('needs-attention')}
+              >
+                Needs Attention ({stats['needs-attention']})
+              </Badge>
+              <Badge 
+                variant={filterLevel === 'good' ? 'default' : 'outline'}
+                className="cursor-pointer bg-green-500 hover:bg-green-600"
+                onClick={() => setFilterLevel('good')}
+              >
+                Good ({stats.good})
+              </Badge>
+            </div>
+          </div>
+
+          {/* View Controls - only show for PG view */}
+          {viewType === 'pgs' && (
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant={clusteredView ? 'default' : 'outline'}
+                onClick={() => setClusteredView(true)}
+                className="flex-1"
+              >
+                Clustered
+              </Button>
+              <Button
+                size="sm"
+                variant={!clusteredView ? 'default' : 'outline'}
+                onClick={() => setClusteredView(false)}
+                className="flex-1"
+              >
+                Individual
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Map Container */}
+      {mapError ? (
+        <div className="w-full h-full flex items-center justify-center bg-gray-100">
+          <Card className="max-w-md">
+            <CardContent className="p-6 text-center">
+              <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Map Loading Error</h3>
+              <p className="text-gray-600 mb-4">{mapError}</p>
+              <div className="text-sm text-gray-500">
+                <p>Debug info:</p>
+                <p>PGs: {pgs?.length || 0}</p>
+                <p>Patients: {patients?.length || 0}</p>
+                <p>Mapbox Available: {isMapboxAvailable ? 'Yes' : 'No'}</p>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      ) : (
+        <div ref={mapRef} className="w-full h-full" />
+      )}
+
+      {/* PG Detail Modal */}
+      {selectedPG && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white">
+            <CardHeader className="flex flex-row items-start justify-between pb-4">
+              <div>
+                <CardTitle className="text-xl">{selectedPG.name}</CardTitle>
+                <p className="text-gray-600 mt-1">
+                  {selectedPG.address.street}, {selectedPG.address.city}, {selectedPG.address.state} {selectedPG.address.zip}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={() => setSelectedPG(null)}
+              >
+                <X className="w-5 h-5" />
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {/* Status Badge */}
+              <div className="flex items-center gap-3">
+                <Badge 
+                  className="px-3 py-1"
+                  style={{ 
+                    backgroundColor: selectedPG.metrics.color,
+                    color: 'white'
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    {selectedPG.metrics.attentionLevel === 'critical' && <AlertTriangle className="w-4 h-4" />}
+                    {selectedPG.metrics.attentionLevel === 'needs-attention' && <Clock className="w-4 h-4" />}
+                    {selectedPG.metrics.attentionLevel === 'good' && <CheckCircle className="w-4 h-4" />}
+                    {selectedPG.metrics.attentionLevel.replace('-', ' ').toUpperCase()}
+                  </div>
+                </Badge>
+                <div className="text-sm text-gray-600">
+                  Urgency: <span className="font-medium">{selectedPG.metrics.urgency}</span>
+                </div>
+              </div>
+
+              {/* Performance Score */}
+              <div className="bg-gray-50 p-4 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">Overall Performance Score</span>
+                  <span className="text-2xl font-bold" style={{ color: selectedPG.metrics.color }}>
+                    {selectedPG.metrics.overallScore}/100
+                  </span>
+                </div>
+                <div className="w-full bg-gray-200 rounded-full h-3">
+                  <div 
+                    className="h-3 rounded-full transition-all duration-500"
+                    style={{ 
+                      width: `${selectedPG.metrics.overallScore}%`,
+                      backgroundColor: selectedPG.metrics.color
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Key Metrics */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-blue-50 p-3 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Users className="w-4 h-4 text-blue-600" />
+                    <span className="text-sm text-blue-600">Active Patients</span>
+                  </div>
+                  <div className="text-xl font-bold text-blue-700">
+                    {selectedPG.metrics.activePatients}
+                  </div>
+                </div>
+                <div className="bg-green-50 p-3 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <DollarSign className="w-4 h-4 text-green-600" />
+                    <span className="text-sm text-green-600">Monthly Revenue</span>
+                  </div>
+                  <div className="text-xl font-bold text-green-700">
+                    ${selectedPG.metrics.totalRevenue.toLocaleString()}
+                  </div>
+                </div>
+                <div className="bg-purple-50 p-3 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-purple-600" />
+                    <span className="text-sm text-purple-600">Avg Billability</span>
+                  </div>
+                  <div className="text-xl font-bold text-purple-700">
+                    {selectedPG.metrics.avgBillability}%
+                  </div>
+                </div>
+                <div className="bg-orange-50 p-3 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-orange-600" />
+                    <span className="text-sm text-orange-600">At-Risk Patients</span>
+                  </div>
+                  <div className="text-xl font-bold text-orange-700">
+                    {selectedPG.metrics.riskPatients}
+                  </div>
+                </div>
+              </div>
+
+              {/* Issues */}
+              {selectedPG.metrics.issues.length > 0 && (
+                <div>
+                  <h4 className="font-medium mb-3 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-red-500" />
+                    Current Issues
+                  </h4>
+                  <ul className="space-y-2">
+                    {selectedPG.metrics.issues.map((issue, index) => (
+                      <li key={index} className="flex items-start gap-2 text-sm">
+                        <div className="w-1.5 h-1.5 bg-red-500 rounded-full mt-1.5 flex-shrink-0" />
+                        {issue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Recommendations */}
+              <div>
+                <h4 className="font-medium mb-3 flex items-center gap-2">
+                  <Target className="w-4 h-4 text-blue-500" />
+                  Recommendations
+                </h4>
+                <ul className="space-y-2">
+                  {selectedPG.metrics.recommendations.map((rec, index) => (
+                    <li key={index} className="flex items-start gap-2 text-sm">
+                      <div className="w-1.5 h-1.5 bg-blue-500 rounded-full mt-1.5 flex-shrink-0" />
+                      {rec}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-3 pt-4 border-t">
+                <Button 
+                  className="flex-1"
+                  onClick={() => {
+                    onPGSelect?.(selectedPG);
+                    setSelectedPG(null);
+                  }}
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  View Details
+                </Button>
+                <Button variant="outline" className="flex-1">
+                  <Zap className="w-4 h-4 mr-2" />
+                  Take Action
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default InteractiveUSMap;
