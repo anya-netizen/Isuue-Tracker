@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { emailTemplates, detailedIssues } from '@/data/detailedCommunications';
+import { channelTypes } from '@/constants/issueConstants';
 import { 
   Trophy, 
   AlertTriangle, 
@@ -96,7 +97,7 @@ function IssueCategorizationCard({ issue, index, issueCategorizationData, editin
               <div className="flex items-center gap-3 mb-2">
                 <h3 className="text-lg font-bold text-gray-900">{issue.title}</h3>
                 <Badge className="bg-gray-100 text-gray-800 text-xs">
-                  {issue.id}
+                  {issue.id.replace(/^\D+/, '')}
                 </Badge>
                 <Button
                   variant="outline"
@@ -640,7 +641,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     const allIssues = [];
     Object.entries(issueCategories).forEach(([categoryKey, category]) => {
       category.issues.forEach(issue => {
-        if (issue.status === 'unsolved') {
+        if (issue.status === 'unsolved' && !issueCategorizationData[issue.id]) {
           allIssues.push({
             ...issue,
             categoryName: category.name,
@@ -659,6 +660,21 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       [issueId]: data
     }));
     setEditingIssueId(null);
+    // Ensure categorized issues appear in the tree immediately
+    const getCategoryKeyForIssue = () => {
+      for (const [key, category] of Object.entries(issueCategories)) {
+        if (category.issues && category.issues.some(i => i.id === issueId)) return key;
+      }
+      return null;
+    };
+    const categoryKey = getCategoryKeyForIssue();
+    setExpandedNodes(prev => {
+      const next = new Set(prev);
+      next.add('main-issues');
+      if (categoryKey) next.add(categoryKey);
+      return next;
+    });
+    setStatusFilter('analyzed');
   };
 
   // Issue type options
@@ -714,6 +730,49 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   // Comprehensive filtering function for issues
   const applyAdvancedFilters = (issues) => {
     return issues.filter(issue => {
+      const saved = issueCategorizationData[issue.id];
+      const effectiveWorkflowStatus = saved ? 'analyzed' : issue.workflowStatus;
+      const effectiveCategory = saved?.type || ((issue.source === 'Phone Call' || issue.issueCategory === 'callTranscripts') ? 'callTranscripts' : (issue.issueCategory || 'others'));
+      // Priority filter
+      if (priorityFilter !== 'all') {
+        if (priorityFilter === 'solved' && issue.status !== 'solved') return false;
+        if (priorityFilter === 'unsolved' && issue.status === 'solved') return false;
+        if (['critical', 'high', 'medium', 'low'].includes(priorityFilter)) {
+          const dynamicPriority = calculateDynamicPriority(issue);
+          if (dynamicPriority.currentPriority !== priorityFilter) return false;
+        }
+      }
+
+      // Region Type filter
+      if (regionTypeFilter !== 'all' && issue.regionType !== regionTypeFilter) return false;
+
+      // Region Name filter
+      if (regionNameFilter !== 'all' && issue.regionName !== regionNameFilter) return false;
+
+      // Category filter (respect categorizer overrides)
+      if (categoryFilter !== 'all' && effectiveCategory !== categoryFilter) return false;
+
+      // Channel filter
+      if (channelFilter !== 'all' && issue.channel !== channelFilter) return false;
+
+      // Status filter (mutually exclusive buckets)
+      if (statusFilter !== 'all') {
+        if (statusFilter === 'resolved') {
+          if (issue.status !== 'solved') return false;
+        } else if (statusFilter === 'new') {
+          if (!(issue.status === 'unsolved' && effectiveWorkflowStatus !== 'analyzed' && effectiveWorkflowStatus !== 'catalyzed')) return false;
+        } else {
+          if (effectiveWorkflowStatus !== statusFilter) return false;
+        }
+      }
+
+      return true;
+    });
+  };
+
+  // Apply all filters except the status filter (used for stable stats)
+  const applyAdvancedFiltersNoStatus = (issues) => {
+    return issues.filter(issue => {
       // Priority filter
       if (priorityFilter !== 'all') {
         if (priorityFilter === 'solved' && issue.status !== 'solved') return false;
@@ -736,12 +795,13 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       // Channel filter
       if (channelFilter !== 'all' && issue.channel !== channelFilter) return false;
 
-      // Status filter
-      if (statusFilter !== 'all' && issue.workflowStatus !== statusFilter) return false;
+      // Intentionally skip statusFilter here
 
       return true;
     });
   };
+
+  // computedIssueCategories is defined after base categories are initialized
 
   // Helper function to check if any advanced filters are active
   const hasAdvancedFiltersActive = () => {
@@ -1860,7 +1920,7 @@ Dr. Williams: Thank you. That helps.
   };
 
   // Helper function to get all issues from all categories
-  const getAllIssues = () => {
+  function getAllIssues() {
     const allIssues = [];
     Object.values(issueCategories).forEach(category => {
       if (category.issues) {
@@ -1868,26 +1928,24 @@ Dr. Williams: Thank you. That helps.
       }
     });
     return allIssues;
-  };
+  }
 
   // Calculate issue statistics dynamically based on filters
   const calculateIssueStatistics = () => {
-    // Get all issues and apply advanced filters (but not priority filter yet)
+    // Get all issues and apply advanced filters EXCEPT status (to keep totals stable)
     const allIssues = getAllIssues();
-    const filteredIssues = applyAdvancedFilters(allIssues);
+    const filteredIssues = applyAdvancedFiltersNoStatus(allIssues);
     
     // Calculate total issues
     const totalIssues = filteredIssues.length;
     
-    // Calculate status-based counts from filtered issues
-    const newIssues = filteredIssues.filter(issue => issue.workflowStatus === 'new').length;
-    const analyzedIssues = filteredIssues.filter(issue => issue.workflowStatus === 'analyzed').length;
-    const catalyzedIssues = filteredIssues.filter(issue => issue.workflowStatus === 'catalyzed').length;
-    const resolvedIssues = filteredIssues.filter(issue => issue.workflowStatus === 'resolved').length;
-    
-    // Keep old counts for backward compatibility
+    // Compute mutually-exclusive buckets so numbers add up
     const solvedIssues = filteredIssues.filter(issue => issue.status === 'solved').length;
     const unsolvedIssues = filteredIssues.filter(issue => issue.status === 'unsolved').length;
+    const analyzedIssues = filteredIssues.filter(issue => issue.status === 'unsolved' && (issue.effectiveWorkflowStatus || issue.workflowStatus) === 'analyzed').length;
+    const catalyzedIssues = filteredIssues.filter(issue => issue.status === 'unsolved' && (issue.effectiveWorkflowStatus || issue.workflowStatus) === 'catalyzed').length;
+    const newIssues = Math.max(unsolvedIssues - analyzedIssues - catalyzedIssues, 0);
+    const resolvedIssues = solvedIssues; // alias for UI card
     
     // Calculate priority counts from filtered issues
     let highPriority = 0;
@@ -1907,18 +1965,53 @@ Dr. Williams: Thank you. That helps.
     
     return {
       totalIssues,
-      newIssues,
       analyzedIssues,
       catalyzedIssues,
       resolvedIssues,
       solvedIssues,
       unsolvedIssues,
+      newIssues,
       highPriority,
       mediumPriority,
       lowPriority,
       criticalPriority
     };
   };
+
+  // Build dynamic categories that mirror the Issue Categorizer options
+  const computedIssueCategories = React.useMemo(() => {
+    const meta = {
+      clinical: { name: 'Clinical', icon: AlertCircle, color: 'from-red-500 to-red-600' },
+      operational: { name: 'Operational', icon: Settings, color: 'from-green-500 to-green-600' },
+      queries: { name: 'Queries', icon: HelpCircle, color: 'from-purple-500 to-purple-600' },
+      technical: { name: 'Technical error', icon: Cpu, color: 'from-blue-500 to-blue-600' },
+      followup: { name: 'Follow up mails', icon: Mail, color: 'from-orange-500 to-orange-600' },
+      enquiry: { name: 'Enquiry mails', icon: MessageSquare, color: 'from-indigo-500 to-indigo-600' }
+    };
+
+    const buckets = Object.entries(meta).reduce((acc, [key, m]) => {
+      acc[key] = { ...m, count: 0, issues: [] };
+      return acc;
+    }, {});
+
+    const allIssues = getAllIssues();
+
+    const toEffectiveCategory = (issue) => {
+      const saved = issueCategorizationData[issue.id];
+      if (saved?.type && buckets[saved.type]) return saved.type;
+      if (issue.issueCategory && buckets[issue.issueCategory]) return issue.issueCategory;
+      return null; // not shown until categorized
+    };
+
+    allIssues.forEach(issue => {
+      const key = toEffectiveCategory(issue);
+      if (!key) return;
+      buckets[key].issues.push(issue);
+    });
+
+    Object.values(buckets).forEach(cat => { cat.count = cat.issues.length; });
+    return buckets;
+  }, [issueCategorizationData, priorityFilter, regionTypeFilter, regionNameFilter, channelFilter]);
 
   // Persona data for detailed profiles
   const personaData = {
@@ -2227,7 +2320,7 @@ Dr. Williams: Thank you. That helps.
   // Calculate issue statistics with useMemo to optimize performance
   const issueStatistics = useMemo(() => {
     return calculateIssueStatistics();
-  }, [regionTypeFilter, regionNameFilter, categoryFilter, channelFilter, statusFilter]);
+  }, [regionTypeFilter, regionNameFilter, categoryFilter, channelFilter, statusFilter, priorityFilter]);
 
   return (
     <div className="space-y-6">
@@ -2665,14 +2758,14 @@ Dr. Williams: Thank you. That helps.
                   </div>
                 </div>
 
-                {/* Issue Categories */}
+                {/* Issue Categories - mirroring categorizer names */}
                 {expandedNodes.has('main-issues') && (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     className="grid grid-cols-1 lg:grid-cols-4 gap-6"
                   >
-                    {Object.entries(issueCategories).map(([key, category]) => {
+                    {Object.entries(computedIssueCategories).map(([key, category]) => {
                       const IconComponent = category.icon;
                       return (
                         <motion.div
@@ -2688,7 +2781,7 @@ Dr. Williams: Thank you. That helps.
                             <CardContent className="p-6 text-center">
                               <IconComponent className="w-8 h-8 mx-auto mb-3" />
                               <h3 className="text-xl font-bold mb-2">{category.name}</h3>
-                              <div className="text-2xl font-bold mb-1">{category.count}</div>
+                              <div className="text-2xl font-bold mb-1">{applyAdvancedFilters(category.issues.map(issue => ({...issue, issueCategory: (issueCategorizationData[issue.id]?.type || issue.issueCategory)}))).length}</div>
                               <div className="text-sm opacity-90">Issues</div>
                               <div className="mt-3 flex items-center justify-center">
                                 {expandedNodes.has(key) ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
@@ -2701,8 +2794,8 @@ Dr. Williams: Thank you. That helps.
                   </motion.div>
                 )}
 
-                {/* Individual Issues */}
-                {Object.entries(issueCategories).map(([categoryKey, category]) => (
+                {/* Individual Issues - driven by categorizer categories */}
+                {Object.entries(computedIssueCategories).map(([categoryKey, category]) => (
                   expandedNodes.has(categoryKey) && (
                     <motion.div
                       key={`${categoryKey}-issues`}
@@ -2714,12 +2807,12 @@ Dr. Williams: Thank you. That helps.
                         {category.name} - Individual Issues
                         {(priorityFilter !== 'all' || hasAdvancedFiltersActive()) && (
                           <Badge className="ml-2 bg-indigo-100 text-indigo-800">
-                            Filtered: {applyAdvancedFilters(category.issues).length} of {category.issues.length}
+                            Filtered: {applyAdvancedFilters(category.issues.map(issue => ({...issue, issueCategory: (issueCategorizationData[issue.id]?.type || issue.issueCategory)}))).length} of {category.issues.length}
                           </Badge>
                         )}
                       </h4>
                       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {applyAdvancedFilters(category.issues).map((issue, index) => (
+                        {applyAdvancedFilters(category.issues.map(issue => ({...issue, issueCategory: (issueCategorizationData[issue.id]?.type || issue.issueCategory)}))).map((issue, index) => (
                           <motion.div
                             key={issue.id}
                             initial={{ opacity: 0, x: -20 }}
@@ -2746,7 +2839,7 @@ Dr. Williams: Thank you. That helps.
                                 </div>
                                 <p className="text-sm text-gray-600 mb-2">{issue.description}</p>
                                 <div className="flex items-center justify-between text-xs text-gray-500">
-                                  <span>ID: {issue.id}</span>
+                                  <span>ID: {issue.id.replace(/^\D+/, '')}</span>
                                   <div className="flex items-center gap-2">
                                     {issue.status === 'solved' ? (
                                       <CheckCircle className="w-4 h-4 text-green-600" />
@@ -4127,7 +4220,7 @@ Dr. Williams: Thank you. That helps.
                 }
                 setIssueResolutionPanel({...issueResolutionPanel, activeTab: value})
               }}>
-                <TabsList className="grid grid-cols-4 w-full">
+                <TabsList className="grid grid-cols-5 w-full">
                   <TabsTrigger value="details">
                     Details
                   </TabsTrigger>
@@ -4153,6 +4246,7 @@ Dr. Williams: Thank you. That helps.
                     </div>
                   </TabsTrigger>
                   <TabsTrigger value="history">History</TabsTrigger>
+                  <TabsTrigger value="channel">Channel</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="details" className="space-y-4">
@@ -4322,6 +4416,27 @@ Dr. Williams: Thank you. That helps.
                     </Card>
                     </div>
                   </div>
+                </TabsContent>
+
+                <TabsContent value="channel" className="space-y-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        Channel
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {(() => {
+                        const info = channelTypes[issueResolutionPanel.issue?.channel] || channelTypes.email;
+                        return (
+                          <div className="flex items-center gap-3">
+                            <Badge className={info.color}>{info.emoji} {info.label}</Badge>
+                            <span className="text-sm text-gray-600">Source: {issueResolutionPanel.issue?.source || '—'}</span>
+                          </div>
+                        );
+                      })()}
+                    </CardContent>
+                  </Card>
                 </TabsContent>
 
                 <TabsContent value="analysis" className="space-y-4">

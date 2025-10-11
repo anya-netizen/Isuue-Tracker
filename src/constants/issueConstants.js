@@ -68,3 +68,4 @@ export const statusTypes = {
   unsolved: { label: 'Unsolved', color: 'bg-red-100 text-red-800' }
 };
 
+

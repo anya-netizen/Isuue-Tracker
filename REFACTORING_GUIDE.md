@@ -407,3 +407,4 @@ For questions about the modular structure, refer to:
 - Component files for specific implementation details
 - Inline JSDoc comments for function documentation
 
+
