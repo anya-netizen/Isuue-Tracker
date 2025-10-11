@@ -2744,22 +2744,10 @@ Dr. Williams: Thank you. That helps.
                 animate={{ opacity: 1, y: 0 }}
                 className="space-y-6"
               >
-                {/* Main Issues Node */}
-                <div className="text-center">
-                  <div 
-                    className="inline-block cursor-pointer p-6 bg-gradient-to-br from-gray-600 to-gray-700 text-white rounded-lg shadow-lg hover:shadow-xl transition-all duration-300"
-                    onClick={() => toggleNode('main-issues')}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Bug className="w-6 h-6" />
-                      <span className="font-bold text-lg">All Issues ({issueStatistics.totalIssues})</span>
-                      {expandedNodes.has('main-issues') ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                    </div>
-                  </div>
-                </div>
-
+                {/* Ensure main-issues is expanded when opening */}
+                {(() => { if (!expandedNodes.has('main-issues')) toggleNode('main-issues'); return null; })()}
                 {/* Issue Categories - mirroring categorizer names */}
-                {expandedNodes.has('main-issues') && (
+                (
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
@@ -2792,7 +2780,7 @@ Dr. Williams: Thank you. That helps.
                       );
                     })}
                   </motion.div>
-                )}
+                )
 
                 {/* Individual Issues - driven by categorizer categories */}
                 {Object.entries(computedIssueCategories).map(([categoryKey, category]) => (
