@@ -544,6 +544,10 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [opportunityEnabled, setOpportunityEnabled] = useState(false);
   const [savedOpportunities, setSavedOpportunities] = useState([]); // Store all saved opportunities
   const [opportunitiesModalOpen, setOpportunitiesModalOpen] = useState(false);
+  const [nextActionModalOpen, setNextActionModalOpen] = useState(false);
+  const [nextActionText, setNextActionText] = useState('');
+  const [nextActions, setNextActions] = useState([]); // Store all next actions
+  const [nextActionsModalOpen, setNextActionsModalOpen] = useState(false); // Modal to view saved actions
   const [currentUser, setCurrentUser] = useState('John Smith'); // In production, this would come from auth
   const [analysisHistory, setAnalysisHistory] = useState([]); // Store all saved analyses with user info
   const [validatedAnalyses, setValidatedAnalyses] = useState(new Set()); // Track which analyses have been validated
@@ -661,6 +665,27 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     
     // Force statistics update by triggering a re-render
     console.log('Opportunity saved, statistics should update automatically');
+  };
+
+  // Handler for saving next action
+  const handleSaveNextAction = () => {
+    if (nextActionText.trim().length < 5) return;
+    
+    // Save the next action
+    const newNextAction = {
+      id: Date.now(),
+      action: nextActionText,
+      createdBy: currentUser,
+      createdAt: new Date().toLocaleString(),
+      status: 'pending'
+    };
+    
+    setNextActions(prev => [...prev, newNextAction]);
+    setNextActionModalOpen(false);
+    setNextActionText('');
+    
+    // Show success notification
+    alert('✅ Next action saved successfully!');
   };
 
   const handleEscalate = () => {
@@ -2656,6 +2681,28 @@ Dr. Williams: Thank you. That helps.
                           {node.id === 'risks' && 'Issues Identified'}
                           {node.id === 'opportunities' && 'Revenue Potential'}
                         </div>
+                        {node.id === 'opportunities' && (
+                          <div className="mt-3 space-y-2">
+                            <Button
+                              onClick={() => setNextActionModalOpen(true)}
+                              className="w-full bg-white/20 hover:bg-white/30 text-white border border-white/30 hover:border-white/50 transition-all duration-200"
+                              size="sm"
+                            >
+                              <Plus className="w-4 h-4 mr-2" />
+                              Add Next Action
+                            </Button>
+                            {nextActions.length > 0 && (
+                              <Button
+                                onClick={() => setNextActionsModalOpen(true)}
+                                className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20 hover:border-white/40 transition-all duration-200"
+                                size="sm"
+                              >
+                                <Eye className="w-4 h-4 mr-2" />
+                                View Actions ({nextActions.length})
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -3882,6 +3929,143 @@ Dr. Williams: Thank you. That helps.
               ))}
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Next Action Modal */}
+      <Dialog open={nextActionModalOpen} onOpenChange={setNextActionModalOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Target className="w-6 h-6 text-orange-600" />
+              Add Next Action for Opportunity
+            </DialogTitle>
+            <DialogDescription>
+              Enter the next action to be taken for this opportunity
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Next Action Description
+              </label>
+              <textarea
+                value={nextActionText}
+                onChange={(e) => setNextActionText(e.target.value)}
+                placeholder="Describe the next action to be taken for this opportunity..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
+                rows={4}
+              />
+            </div>
+            
+            <div className="flex justify-end gap-3 pt-4">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setNextActionModalOpen(false);
+                  setNextActionText('');
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSaveNextAction}
+                disabled={nextActionText.trim().length < 5}
+                className="bg-orange-600 hover:bg-orange-700 text-white"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Save Next Action
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Next Actions Modal */}
+      <Dialog open={nextActionsModalOpen} onOpenChange={setNextActionsModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Target className="w-6 h-6 text-orange-600" />
+              Next Actions for Opportunities
+            </DialogTitle>
+            <DialogDescription>
+              All saved next actions for opportunities ({nextActions.length} total)
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {nextActions.length === 0 ? (
+              <div className="text-center py-8 text-gray-500">
+                <Target className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                <p>No next actions saved yet.</p>
+                <p className="text-sm">Click "Add Next Action" to create your first action.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {nextActions.map((action, index) => (
+                  <motion.div
+                    key={action.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="bg-gradient-to-r from-orange-50 to-amber-50 border border-orange-200 rounded-lg p-4"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <p className="text-gray-900 font-medium mb-2">{action.action}</p>
+                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                          <span className="flex items-center gap-1">
+                            <User className="w-4 h-4" />
+                            {action.createdBy}
+                          </span>
+                          <span className="flex items-center gap-1">
+                            <Clock className="w-4 h-4" />
+                            {action.createdAt}
+                          </span>
+                          <Badge 
+                            className={`${
+                              action.status === 'pending' ? 'bg-yellow-100 text-yellow-800' :
+                              action.status === 'completed' ? 'bg-green-100 text-green-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}
+                          >
+                            {action.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 ml-4">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            const newStatus = action.status === 'pending' ? 'completed' : 'pending';
+                            setNextActions(prev => prev.map(a => 
+                              a.id === action.id ? { ...a, status: newStatus } : a
+                            ));
+                          }}
+                          className="text-xs"
+                        >
+                          {action.status === 'pending' ? 'Mark Complete' : 'Mark Pending'}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setNextActions(prev => prev.filter(a => a.id !== action.id));
+                          }}
+                          className="text-red-600 hover:text-red-700 text-xs"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
 
