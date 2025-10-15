@@ -548,6 +548,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [nextActionText, setNextActionText] = useState('');
   const [nextActions, setNextActions] = useState([]); // Store all next actions
   const [nextActionsModalOpen, setNextActionsModalOpen] = useState(false); // Modal to view saved actions
+  const [selectedOpportunityId, setSelectedOpportunityId] = useState(null); // Track which opportunity is selected
   const [currentUser, setCurrentUser] = useState('John Smith'); // In production, this would come from auth
   const [analysisHistory, setAnalysisHistory] = useState([]); // Store all saved analyses with user info
   const [validatedAnalyses, setValidatedAnalyses] = useState(new Set()); // Track which analyses have been validated
@@ -671,18 +672,20 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const handleSaveNextAction = () => {
     if (nextActionText.trim().length < 5) return;
     
-    // Save the next action
+    // Save the next action with opportunity association
     const newNextAction = {
       id: Date.now(),
       action: nextActionText,
       createdBy: currentUser,
       createdAt: new Date().toLocaleString(),
-      status: 'pending'
+      status: 'pending',
+      opportunityId: selectedOpportunityId
     };
     
     setNextActions(prev => [...prev, newNextAction]);
     setNextActionModalOpen(false);
     setNextActionText('');
+    setSelectedOpportunityId(null);
     
     // Show success notification
     alert('✅ Next action saved successfully!');
@@ -3991,12 +3994,12 @@ Dr. Williams: Thank you. That helps.
               Next Actions for Opportunities
             </DialogTitle>
             <DialogDescription>
-              All saved next actions for opportunities ({nextActions.length} total)
+              Next actions for this opportunity ({nextActions.filter(action => action.opportunityId === selectedOpportunityId).length} total)
             </DialogDescription>
           </DialogHeader>
           
           <div className="space-y-4">
-            {nextActions.length === 0 ? (
+            {nextActions.filter(action => action.opportunityId === selectedOpportunityId).length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Target className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                 <p>No next actions saved yet.</p>
@@ -4004,7 +4007,7 @@ Dr. Williams: Thank you. That helps.
               </div>
             ) : (
               <div className="space-y-3">
-                {nextActions.map((action, index) => (
+                {nextActions.filter(action => action.opportunityId === selectedOpportunityId).map((action, index) => (
                   <motion.div
                     key={action.id}
                     initial={{ opacity: 0, y: 20 }}
@@ -7268,7 +7271,7 @@ Dr. Williams: Thank you. That helps.
                         </div>
 
                         {/* Action Buttons */}
-                        <div className="flex items-center gap-2 mt-4">
+                        <div className="flex flex-wrap items-center gap-2 mt-4">
                           <Button
                             variant="outline"
                             size="sm"
@@ -7293,6 +7296,32 @@ Dr. Williams: Thank you. That helps.
                             <CheckCircle className="w-4 h-4" />
                             Mark Implemented
                           </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 hover:bg-orange-50 hover:text-orange-700 hover:border-orange-300"
+                            onClick={() => {
+                              setSelectedOpportunityId(opportunity.id);
+                              setNextActionModalOpen(true);
+                            }}
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add Next Action
+                          </Button>
+                          {nextActions.filter(action => action.opportunityId === opportunity.id).length > 0 && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex items-center gap-2 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-300"
+                              onClick={() => {
+                                setSelectedOpportunityId(opportunity.id);
+                                setNextActionsModalOpen(true);
+                              }}
+                            >
+                              <Eye className="w-4 h-4" />
+                              View Actions ({nextActions.filter(action => action.opportunityId === opportunity.id).length})
+                            </Button>
+                          )}
                         </div>
                       </CardContent>
                     </Card>
