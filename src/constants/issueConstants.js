@@ -45,7 +45,7 @@ export const issueCategoryColors = {
 
 // Priority levels
 export const priorityLevels = {
-  critical: { label: 'Critical', color: 'bg-red-600 text-white', emoji: '🔴' },
+  // critical removed
   high: { label: 'High', color: 'bg-red-100 text-red-800', emoji: '🟡' },
   medium: { label: 'Medium', color: 'bg-yellow-100 text-yellow-800', emoji: '🔵' },
   low: { label: 'Low', color: 'bg-blue-100 text-blue-800', emoji: '🟣' }

@@ -2,8 +2,7 @@ import React, { useState, useEffect } from 'react'
 import CustomerSuccessTab from './components/CustomerSuccessTab'
 import { physicianGroups, patients, documents } from './data/mockData'
 import { enhancedPhysicianGroups } from './data/enhancedPGData'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './components/ui/select'
-import { Building2, AlertCircle } from 'lucide-react'
+import { AlertCircle } from 'lucide-react'
 import './App.css'
 
 // Error Boundary Component
@@ -129,8 +128,8 @@ function App() {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 p-6 flex items-center justify-center">
         <div className="text-center">
-          <Building2 className="w-16 h-16 text-slate-400 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-slate-700 mb-2">No Physician Groups Available</h2>
+          <AlertCircle className="w-16 h-16 text-slate-400 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-slate-700 mb-2">No Data Available</h2>
           <p className="text-slate-600">Please check your data configuration.</p>
         </div>
       </div>
@@ -140,44 +139,8 @@ function App() {
   return (
     <ErrorBoundary>
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/30 p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Header */}
-          <div className="bg-white/70 backdrop-blur-xl rounded-3xl p-8 shadow-2xl border border-white/50">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="p-4 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl shadow-lg">
-                  <Building2 className="w-12 h-12 text-white" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold text-slate-900">Customer Success Dashboard</h1>
-                  <p className="text-slate-600">{selectedPG.name}</p>
-                </div>
-              </div>
-              <div className="w-80">
-                <Select 
-                  value={selectedPG?.name} 
-                  onValueChange={(value) => {
-                    const pg = allPGs.find(p => p.name === value)
-                    console.log('🔄 PG changed to:', pg?.name)
-                    setSelectedPG(pg)
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select PG" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {allPGs.map((pg) => (
-                      <SelectItem key={pg.name} value={pg.name}>
-                        {pg.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </div>
-
-          {/* Customer Success Tab */}
+        <div className="max-w-7xl mx-auto">
+          {/* Issue Tracker */}
           <CustomerSuccessTab 
             selectedPG={selectedPG}
             patients={patients}

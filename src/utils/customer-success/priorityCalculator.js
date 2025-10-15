@@ -8,7 +8,7 @@ export const calculateDynamicPriority = (issue) => {
   
   // Base priority scores
   const basePriority = {
-    'critical': 100,
+    'critical': 75, // map any legacy "critical" to high
     'high': 75,
     'medium': 50,
     'low': 25
@@ -72,11 +72,7 @@ export const calculateDynamicPriority = (issue) => {
   let priorityColor = 'bg-blue-100 text-blue-800';
   let escalationWarning = false;
   
-  if (priorityScore >= 150) {
-    finalPriority = 'critical';
-    priorityColor = 'bg-red-600 text-white animate-pulse';
-    escalationWarning = true;
-  } else if (priorityScore >= 100) {
+  if (priorityScore >= 100) {
     finalPriority = 'high';
     priorityColor = 'bg-red-100 text-red-800';
   } else if (priorityScore >= 60) {

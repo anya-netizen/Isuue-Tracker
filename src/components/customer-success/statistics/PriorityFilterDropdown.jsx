@@ -18,7 +18,7 @@ export const PriorityFilterDropdown = ({
         className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm hover:border-gray-400 transition-colors text-sm font-medium"
       >
         <option value="all">All Priorities ({issueStatistics.totalIssues})</option>
-        <option value="critical">🔴 Critical ({issueStatistics.criticalPriority})</option>
+        {/* Critical removed */}
         <option value="high">🟡 High Priority ({issueStatistics.highPriority})</option>
         <option value="medium">🔵 Medium Priority ({issueStatistics.mediumPriority})</option>
         <option value="low">🟣 Low Priority ({issueStatistics.lowPriority})</option>

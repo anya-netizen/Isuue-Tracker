@@ -89,13 +89,13 @@ export const calculateIssueStatistics = (issueCategories, filters) => {
   let highPriority = 0;
   let mediumPriority = 0;
   let lowPriority = 0;
-  let criticalPriority = 0;
+  let criticalPriority = 0; // kept for backward compatibility but unused in UI
   
   filteredIssues.forEach(issue => {
     const dynamicPriority = calculateDynamicPriority(issue);
     const priority = dynamicPriority.finalPriority;
     
-    if (priority === 'critical') criticalPriority++;
+    if (priority === 'critical') criticalPriority++; // legacy count
     else if (priority === 'high') highPriority++;
     else if (priority === 'medium') mediumPriority++;
     else if (priority === 'low') lowPriority++;
@@ -108,7 +108,7 @@ export const calculateIssueStatistics = (issueCategories, filters) => {
     highPriority,
     mediumPriority,
     lowPriority,
-    criticalPriority
+    criticalPriority // still returned but no longer displayed
   };
 };
 

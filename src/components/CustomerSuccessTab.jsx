@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Input } from '@/components/ui/input';
 import { emailTemplates, detailedIssues } from '@/data/detailedCommunications';
 import { channelTypes } from '@/constants/issueConstants';
 import { 
@@ -37,6 +38,8 @@ import {
   Zap,
   Shield,
   HelpCircle,
+  Search,
+  CircleDot,
   GitBranch,
   Layout,
   Cpu,
@@ -45,7 +48,6 @@ import {
   Network,
   Code,
   ChevronDown,
-  ChevronRight,
   X,
   Plus,
   Edit,
@@ -58,7 +60,8 @@ import {
   AlertCircle,
   FileX,
   UserPlus,
-  ThumbsUp
+  ThumbsUp,
+  Tag
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
@@ -224,6 +227,9 @@ function IssueCategorizationCard({ issue, index, issueCategorizationData, editin
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Issue Type <span className="text-red-500">*</span>
                 </label>
+                <div className="text-xs text-gray-500 mb-2">
+                  Operational: process/policy or workflow gaps. Queries: general questions or clarifications. Technical: bugs, errors, integrations. Follow up mail: reminders or nudges after a prior contact. Enquiry mail: new inbound requests from customers.
+                </div>
                 <select
                   value={localType}
                   onChange={(e) => setLocalType(e.target.value)}
@@ -536,6 +542,8 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [showOpportunity, setShowOpportunity] = useState(false);
   const [issueOpportunity, setIssueOpportunity] = useState('');
   const [opportunityEnabled, setOpportunityEnabled] = useState(false);
+  const [savedOpportunities, setSavedOpportunities] = useState([]); // Store all saved opportunities
+  const [opportunitiesModalOpen, setOpportunitiesModalOpen] = useState(false);
   const [currentUser, setCurrentUser] = useState('John Smith'); // In production, this would come from auth
   const [analysisHistory, setAnalysisHistory] = useState([]); // Store all saved analyses with user info
   const [validatedAnalyses, setValidatedAnalyses] = useState(new Set()); // Track which analyses have been validated
@@ -562,6 +570,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [statDetailModalOpen, setStatDetailModalOpen] = useState(false);
   const [documentListModalOpen, setDocumentListModalOpen] = useState(false);
   const [selectedDocumentType, setSelectedDocumentType] = useState(null);
+  const [documentSearchTerm, setDocumentSearchTerm] = useState('');
   const [claimsListModalOpen, setClaimsListModalOpen] = useState(false);
   const [selectedClaimsType, setSelectedClaimsType] = useState(null);
   const [adminListModalOpen, setAdminListModalOpen] = useState(false);
@@ -571,7 +580,7 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [emailViewerOpen, setEmailViewerOpen] = useState(false);
   const [selectedEmail, setSelectedEmail] = useState(null);
   const [reportType, setReportType] = useState('synopsis');
-  const [priorityFilter, setPriorityFilter] = useState('all'); // all, critical, high, medium, low
+  const [priorityFilter, setPriorityFilter] = useState('all'); // all, high, medium, low
   const [newPersona, setNewPersona] = useState({
     fullName: '',
     jobTitle: '',
@@ -584,6 +593,8 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   
   // Unsolved Issues Categorization Modal
   const [unsolvedModalOpen, setUnsolvedModalOpen] = useState(false);
+  // Analyzed Issues Validation Modal
+  const [analyzedModalOpen, setAnalyzedModalOpen] = useState(false);
   const [issueCategorizationData, setIssueCategorizationData] = useState({}); // Store categorization for each issue
   const [editingIssueId, setEditingIssueId] = useState(null);
   
@@ -593,11 +604,25 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [channelFilter, setChannelFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [dateFilter, setDateFilter] = useState('all');
+  const [viewMode, setViewMode] = useState('dashboard'); // 'dashboard' or 'issueTracker'
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   // Derived values - calculated after state declarations
   // Check if at least one analysis for the current issue has been validated
   const issueAnalyses = analysisHistory.filter(a => a.issueId === issueResolutionPanel.issue?.id);
   const isResolutionEnabled = issueAnalyses.some(analysis => validatedAnalyses.has(analysis.id));
+
+  // Build list of issues that have at least one saved analysis (for modal)
+  const analyzedIssuesList = useMemo(() => {
+    const byIssueId = new Map();
+    analysisHistory.forEach(a => {
+      if (!byIssueId.has(a.issueId)) byIssueId.set(a.issueId, []);
+      byIssueId.get(a.issueId).push(a);
+    });
+    return Array.from(byIssueId.entries()).map(([issueId, analyses]) => ({ issueId, analyses }));
+  }, [analysisHistory]);
   const isOpportunityEnabled = issueResolutionNotes.trim().length >= 10;
 
   // Handlers for resolution actions
@@ -614,11 +639,28 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   // Handler for saving opportunity
   const handleSaveOpportunity = () => {
     if (issueOpportunity.trim().length < 10) return;
-    // Here you would typically save the opportunity to your backend
-    console.log('Opportunity saved:', issueOpportunity);
+    
+    // Save the opportunity with issue details
+    const newOpportunity = {
+      id: Date.now(),
+      issueId: issueResolutionPanel.issue?.id,
+      issueTitle: issueResolutionPanel.issue?.title,
+      issueDescription: issueResolutionPanel.issue?.description,
+      opportunity: issueOpportunity,
+      createdBy: currentUser,
+      createdAt: new Date().toLocaleString(),
+      status: 'active'
+    };
+    
+    setSavedOpportunities(prev => [...prev, newOpportunity]);
     setShowOpportunity(false);
     setIssueOpportunity('');
-    // You could add a success notification here
+    
+    // Show success notification
+    alert('✅ Opportunity saved successfully!');
+    
+    // Force statistics update by triggering a re-render
+    console.log('Opportunity saved, statistics should update automatically');
   };
 
   const handleEscalate = () => {
@@ -679,12 +721,11 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
 
   // Issue type options
   const issueTypeOptions = [
-    { value: 'clinical', label: 'Clinical', color: 'blue' },
-    { value: 'operational', label: 'Operational/Patient services', color: 'green' },
+    { value: 'operational', label: 'Operational', color: 'green' },
     { value: 'queries', label: 'Queries', color: 'purple' },
-    { value: 'technical', label: 'Technical error', color: 'red' },
-    { value: 'followup', label: 'Follow up mails', color: 'orange' },
-    { value: 'enquiry', label: 'Enquiry mails', color: 'indigo' }
+    { value: 'technical', label: 'Technical', color: 'red' },
+    { value: 'followup', label: 'Follow up mail', color: 'orange' },
+    { value: 'enquiry', label: 'Enquiry mail', color: 'indigo' }
   ];
 
   // Region Hierarchy Data
@@ -727,6 +768,16 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     setRegionNameFilter('all');
   }, [regionTypeFilter]);
 
+  React.useEffect(() => {
+    if (!documentListModalOpen) {
+      setDocumentSearchTerm('');
+    }
+  }, [documentListModalOpen]);
+
+  React.useEffect(() => {
+    setDocumentSearchTerm('');
+  }, [selectedDocumentType]);
+
   // Comprehensive filtering function for issues
   const applyAdvancedFilters = (issues) => {
     return issues.filter(issue => {
@@ -737,9 +788,9 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       if (priorityFilter !== 'all') {
         if (priorityFilter === 'solved' && issue.status !== 'solved') return false;
         if (priorityFilter === 'unsolved' && issue.status === 'solved') return false;
-        if (['critical', 'high', 'medium', 'low'].includes(priorityFilter)) {
+        if (['high', 'medium', 'low'].includes(priorityFilter)) {
           const dynamicPriority = calculateDynamicPriority(issue);
-          if (dynamicPriority.currentPriority !== priorityFilter) return false;
+          if (dynamicPriority.finalPriority !== priorityFilter) return false;
         }
       }
 
@@ -754,6 +805,47 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
 
       // Channel filter
       if (channelFilter !== 'all' && issue.channel !== channelFilter) return false;
+
+      // Date filter
+      if (dateFilter !== 'all') {
+        const issueDate = new Date(issue.createdDate);
+        const now = new Date();
+        
+        switch (dateFilter) {
+          case 'today':
+            if (issueDate.toDateString() !== now.toDateString()) return false;
+            break;
+          case 'yesterday':
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (issueDate.toDateString() !== yesterday.toDateString()) return false;
+            break;
+          case 'thisWeek':
+            const weekStart = new Date(now);
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            if (issueDate < weekStart) return false;
+            break;
+          case 'lastWeek':
+            const lastWeekStart = new Date(now);
+            lastWeekStart.setDate(lastWeekStart.getDate() - lastWeekStart.getDay() - 7);
+            const lastWeekEnd = new Date(lastWeekStart);
+            lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
+            if (issueDate < lastWeekStart || issueDate > lastWeekEnd) return false;
+            break;
+          case 'thisMonth':
+            if (issueDate.getMonth() !== now.getMonth() || issueDate.getFullYear() !== now.getFullYear()) return false;
+            break;
+          case 'lastMonth':
+            const lastMonth = new Date(now);
+            lastMonth.setMonth(lastMonth.getMonth() - 1);
+            if (issueDate.getMonth() !== lastMonth.getMonth() || issueDate.getFullYear() !== lastMonth.getFullYear()) return false;
+            break;
+          case 'custom':
+            if (startDate && issueDate < new Date(startDate)) return false;
+            if (endDate && issueDate > new Date(endDate + 'T23:59:59')) return false;
+            break;
+        }
+      }
 
       // Status filter (mutually exclusive buckets)
       if (statusFilter !== 'all') {
@@ -773,13 +865,16 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
   // Apply all filters except the status filter (used for stable stats)
   const applyAdvancedFiltersNoStatus = (issues) => {
     return issues.filter(issue => {
+      const saved = issueCategorizationData[issue.id];
+      const effectiveCategory = saved?.type || ((issue.source === 'Phone Call' || issue.issueCategory === 'callTranscripts') ? 'callTranscripts' : (issue.issueCategory || 'others'));
+      
       // Priority filter
       if (priorityFilter !== 'all') {
         if (priorityFilter === 'solved' && issue.status !== 'solved') return false;
         if (priorityFilter === 'unsolved' && issue.status === 'solved') return false;
-        if (['critical', 'high', 'medium', 'low'].includes(priorityFilter)) {
+        if (['high', 'medium', 'low'].includes(priorityFilter)) {
           const dynamicPriority = calculateDynamicPriority(issue);
-          if (dynamicPriority.currentPriority !== priorityFilter) return false;
+          if (dynamicPriority.finalPriority !== priorityFilter) return false;
         }
       }
 
@@ -789,11 +884,52 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
       // Region Name filter
       if (regionNameFilter !== 'all' && issue.regionName !== regionNameFilter) return false;
 
-      // Category filter
-      if (categoryFilter !== 'all' && issue.issueCategory !== categoryFilter) return false;
+      // Category filter (respect categorizer overrides)
+      if (categoryFilter !== 'all' && effectiveCategory !== categoryFilter) return false;
 
       // Channel filter
       if (channelFilter !== 'all' && issue.channel !== channelFilter) return false;
+
+      // Date filter
+      if (dateFilter !== 'all') {
+        const issueDate = new Date(issue.createdDate);
+        const now = new Date();
+        
+        switch (dateFilter) {
+          case 'today':
+            if (issueDate.toDateString() !== now.toDateString()) return false;
+            break;
+          case 'yesterday':
+            const yesterday = new Date(now);
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (issueDate.toDateString() !== yesterday.toDateString()) return false;
+            break;
+          case 'thisWeek':
+            const weekStart = new Date(now);
+            weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+            if (issueDate < weekStart) return false;
+            break;
+          case 'lastWeek':
+            const lastWeekStart = new Date(now);
+            lastWeekStart.setDate(lastWeekStart.getDate() - lastWeekStart.getDay() - 7);
+            const lastWeekEnd = new Date(lastWeekStart);
+            lastWeekEnd.setDate(lastWeekEnd.getDate() + 6);
+            if (issueDate < lastWeekStart || issueDate > lastWeekEnd) return false;
+            break;
+          case 'thisMonth':
+            if (issueDate.getMonth() !== now.getMonth() || issueDate.getFullYear() !== now.getFullYear()) return false;
+            break;
+          case 'lastMonth':
+            const lastMonth = new Date(now);
+            lastMonth.setMonth(lastMonth.getMonth() - 1);
+            if (issueDate.getMonth() !== lastMonth.getMonth() || issueDate.getFullYear() !== lastMonth.getFullYear()) return false;
+            break;
+          case 'custom':
+            if (startDate && issueDate < new Date(startDate)) return false;
+            if (endDate && issueDate > new Date(endDate + 'T23:59:59')) return false;
+            break;
+        }
+      }
 
       // Intentionally skip statusFilter here
 
@@ -808,7 +944,8 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     return regionTypeFilter !== 'all' || 
            regionNameFilter !== 'all' || 
            categoryFilter !== 'all' || 
-           channelFilter !== 'all';
+           channelFilter !== 'all' ||
+           dateFilter !== 'all';
   };
 
   // Clear all advanced filters
@@ -818,6 +955,9 @@ export default function CustomerSuccessTab({ selectedPG, patients, documents }) 
     setCategoryFilter('all');
     setChannelFilter('all');
     setPriorityFilter('all');
+    setDateFilter('all');
+    setStartDate('');
+    setEndDate('');
   };
 
   // Recipients data
@@ -1942,8 +2082,25 @@ Dr. Williams: Thank you. That helps.
     // Compute mutually-exclusive buckets so numbers add up
     const solvedIssues = filteredIssues.filter(issue => issue.status === 'solved').length;
     const unsolvedIssues = filteredIssues.filter(issue => issue.status === 'unsolved').length;
-    const analyzedIssues = filteredIssues.filter(issue => issue.status === 'unsolved' && (issue.effectiveWorkflowStatus || issue.workflowStatus) === 'analyzed').length;
-    const catalyzedIssues = filteredIssues.filter(issue => issue.status === 'unsolved' && (issue.effectiveWorkflowStatus || issue.workflowStatus) === 'catalyzed').length;
+    
+    // Calculate analyzed issues - includes both workflow status and categorized issues
+    const analyzedIssues = filteredIssues.filter(issue => {
+      if (issue.status === 'solved') return false;
+      // Check if issue has been categorized (which means it's analyzed)
+      if (issueCategorizationData[issue.id]) return true;
+      // Check workflow status
+      return (issue.effectiveWorkflowStatus || issue.workflowStatus) === 'analyzed';
+    }).length;
+    
+    // Calculate catalyzed issues
+    const catalyzedIssues = filteredIssues.filter(issue => {
+      if (issue.status === 'solved') return false;
+      // Don't count categorized issues as catalyzed (they're analyzed)
+      if (issueCategorizationData[issue.id]) return false;
+      return (issue.effectiveWorkflowStatus || issue.workflowStatus) === 'catalyzed';
+    }).length;
+    
+    // New issues are unsolved issues that haven't been analyzed or catalyzed
     const newIssues = Math.max(unsolvedIssues - analyzedIssues - catalyzedIssues, 0);
     const resolvedIssues = solvedIssues; // alias for UI card
     
@@ -1963,7 +2120,7 @@ Dr. Williams: Thank you. That helps.
       else if (priority === 'low') lowPriority++;
     });
     
-    return {
+    const stats = {
       totalIssues,
       analyzedIssues,
       catalyzedIssues,
@@ -1974,8 +2131,16 @@ Dr. Williams: Thank you. That helps.
       highPriority,
       mediumPriority,
       lowPriority,
-      criticalPriority
+      criticalPriority,
+      opportunitiesCount: savedOpportunities.length
     };
+    
+    // Debug logging to verify statistics are updating
+    console.log('Issue Statistics Updated:', stats);
+    console.log('Categorized Issues:', Object.keys(issueCategorizationData).length);
+    console.log('Saved Opportunities:', savedOpportunities.length);
+    
+    return stats;
   };
 
   // Build dynamic categories that mirror the Issue Categorizer options
@@ -2317,13 +2482,49 @@ Dr. Williams: Thank you. That helps.
     return mockAdmin[adminType] || [];
   };
 
+  const documentsForSelectedType = useMemo(() => {
+    if (!selectedDocumentType) return [];
+    return getDocumentList(selectedDocumentType);
+  }, [selectedDocumentType]);
+
+  const filteredDocumentsForModal = useMemo(() => {
+    const query = documentSearchTerm.trim().toLowerCase();
+    if (!query) return documentsForSelectedType;
+    return documentsForSelectedType.filter(document => {
+      const candidates = [document.patientName, document.name, document.id];
+      return candidates.some(value => value?.toLowerCase().includes(query));
+    });
+  }, [documentsForSelectedType, documentSearchTerm]);
+
   // Calculate issue statistics with useMemo to optimize performance
   const issueStatistics = useMemo(() => {
     return calculateIssueStatistics();
-  }, [regionTypeFilter, regionNameFilter, categoryFilter, channelFilter, statusFilter, priorityFilter]);
+  }, [regionTypeFilter, regionNameFilter, categoryFilter, channelFilter, statusFilter, priorityFilter, issueCategorizationData, savedOpportunities]);
 
   return (
     <div className="space-y-6">
+      {/* View Mode Toggle */}
+      <div className="flex justify-end gap-2 mb-4">
+        <Button
+          onClick={() => setViewMode('dashboard')}
+          variant={viewMode === 'dashboard' ? 'default' : 'outline'}
+          className="flex items-center gap-2"
+        >
+          <BarChart3 className="w-4 h-4" />
+          Full Dashboard
+        </Button>
+        <Button
+          onClick={() => setViewMode('issueTracker')}
+          variant={viewMode === 'issueTracker' ? 'default' : 'outline'}
+          className="flex items-center gap-2"
+        >
+          <AlertTriangle className="w-4 h-4" />
+          Issue Tracker Only
+        </Button>
+      </div>
+
+      {viewMode === 'dashboard' && (
+        <>
       {/* Customer Success Overview */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Patient Statistics */}
@@ -2514,7 +2715,7 @@ Dr. Williams: Thank you. That helps.
           {/* Issue Statistics & Priority Filter */}
           <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
             {/* Status Filter Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 flex-1">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 flex-1">
               {/* All Status */}
               <motion.div 
                 whileHover={{ scale: 1.05 }}
@@ -2551,7 +2752,10 @@ Dr. Williams: Thank you. That helps.
                 className={`text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
                   statusFilter === 'analyzed' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
                 }`}
-                onClick={() => setStatusFilter('analyzed')}
+                onClick={() => {
+                  setStatusFilter('analyzed');
+                  setAnalyzedModalOpen(true);
+                }}
               >
                 <div className="text-2xl font-bold text-blue-800">{issueStatistics.analyzedIssues}</div>
                 <div className="text-sm text-blue-600 font-medium">Analyzed</div>
@@ -2582,6 +2786,17 @@ Dr. Williams: Thank you. That helps.
                 <div className="text-2xl font-bold text-green-800">{issueStatistics.resolvedIssues}</div>
                 <div className="text-sm text-green-600 font-medium">Resolved</div>
               </motion.div>
+              
+              {/* Opportunity Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="text-center p-4 bg-gradient-to-br from-purple-50 to-pink-100 rounded-lg border-2 border-purple-200 cursor-pointer transition-all duration-300 hover:shadow-lg hover:border-purple-400"
+                onClick={() => setOpportunitiesModalOpen(true)}
+              >
+                <div className="text-2xl font-bold text-purple-800">{issueStatistics.opportunitiesCount}</div>
+                <div className="text-xs text-purple-600 font-medium">Opportunities</div>
+              </motion.div>
             </div>
 
             {/* Priority Filter Dropdown */}
@@ -2596,7 +2811,6 @@ Dr. Williams: Thank you. That helps.
                 className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm hover:border-gray-400 transition-colors text-sm font-medium"
               >
                 <option value="all">All Priorities ({issueStatistics.totalIssues})</option>
-                <option value="critical">🔴 Critical ({issueStatistics.criticalPriority})</option>
                 <option value="high">🟡 High Priority ({issueStatistics.highPriority})</option>
                 <option value="medium">🔵 Medium Priority ({issueStatistics.mediumPriority})</option>
                 <option value="low">🟣 Low Priority ({issueStatistics.lowPriority})</option>
@@ -2624,7 +2838,7 @@ Dr. Williams: Thank you. That helps.
               )}
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
               {/* Region Type Filter */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -2674,10 +2888,11 @@ Dr. Williams: Thank you. That helps.
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white text-sm"
                 >
                   <option value="all">All Categories</option>
-                  <option value="technical">Technical</option>
-                  <option value="clinical">Clinical</option>
-                  <option value="operational">Operational/Patient Services</option>
+                  <option value="operational">Operational</option>
                   <option value="queries">Queries</option>
+                  <option value="technical">Technical</option>
+                  <option value="followup">Follow up mail</option>
+                  <option value="enquiry">Enquiry mail</option>
                 </select>
               </div>
 
@@ -2745,108 +2960,245 @@ Dr. Williams: Thank you. That helps.
                 className="space-y-6"
               >
                 {/* Ensure main-issues is expanded when opening */}
-                {(() => { if (!expandedNodes.has('main-issues')) toggleNode('main-issues'); return null; })()}
-                {/* Issue Categories - mirroring categorizer names */}
-                (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: 'auto' }}
-                    className="grid grid-cols-1 lg:grid-cols-4 gap-6"
-                  >
-                    {Object.entries(computedIssueCategories).map(([key, category]) => {
-                      const IconComponent = category.icon;
-                      return (
-                        <motion.div
-                          key={key}
-                          initial={{ opacity: 0, scale: 0.9 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ delay: 0.1 }}
-                        >
-                          <Card 
-                            className={`cursor-pointer shadow-lg border-0 bg-gradient-to-br ${category.color} text-white hover:shadow-xl transform hover:scale-105 transition-all duration-300`}
-                            onClick={() => toggleNode(key)}
-                          >
-                            <CardContent className="p-6 text-center">
-                              <IconComponent className="w-8 h-8 mx-auto mb-3" />
-                              <h3 className="text-xl font-bold mb-2">{category.name}</h3>
-                              <div className="text-2xl font-bold mb-1">{applyAdvancedFilters(category.issues.map(issue => ({...issue, issueCategory: (issueCategorizationData[issue.id]?.type || issue.issueCategory)}))).length}</div>
-                              <div className="text-sm opacity-90">Issues</div>
-                              <div className="mt-3 flex items-center justify-center">
-                                {expandedNodes.has(key) ? <ChevronDown className="w-5 h-5" /> : <ChevronRight className="w-5 h-5" />}
-                              </div>
-                            </CardContent>
-                          </Card>
-                        </motion.div>
-                      );
-                    })}
-                  </motion.div>
-                )
+                {(() => {
+                  if (!expandedNodes.has('main-issues')) toggleNode('main-issues');
+                  return null;
+                })()}
 
-                {/* Individual Issues - driven by categorizer categories */}
-                {Object.entries(computedIssueCategories).map(([categoryKey, category]) => (
-                  expandedNodes.has(categoryKey) && (
-                    <motion.div
-                      key={`${categoryKey}-issues`}
-                      initial={{ opacity: 0, height: 0 }}
-                      animate={{ opacity: 1, height: 'auto' }}
-                      className="mt-6"
-                    >
-                      <h4 className="text-lg font-semibold mb-4 text-center text-gray-700">
-                        {category.name} - Individual Issues
-                        {(priorityFilter !== 'all' || hasAdvancedFiltersActive()) && (
-                          <Badge className="ml-2 bg-indigo-100 text-indigo-800">
-                            Filtered: {applyAdvancedFilters(category.issues.map(issue => ({...issue, issueCategory: (issueCategorizationData[issue.id]?.type || issue.issueCategory)}))).length} of {category.issues.length}
-                          </Badge>
-                        )}
-                      </h4>
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {applyAdvancedFilters(category.issues.map(issue => ({...issue, issueCategory: (issueCategorizationData[issue.id]?.type || issue.issueCategory)}))).map((issue, index) => (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="relative overflow-hidden rounded-3xl border border-indigo-100 bg-white/70 shadow-2xl backdrop-blur"
+                >
+                  <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400" />
+                  <div className="relative p-6 md:p-10">
+                    <div className="flex flex-col items-center text-center">
+                      <div className="flex flex-col items-center">
+                        <div className="flex items-center gap-3 rounded-full bg-indigo-600/90 px-6 py-3 text-white shadow-lg">
+                          <GitBranch className="h-5 w-5" />
+                          <span className="text-sm font-semibold uppercase tracking-wide">
+                            Issue Categorization Flow
+                          </span>
+                        </div>
+                        <p className="mt-4 max-w-2xl text-sm text-indigo-900/80">
+                          Visualize how categories progress from summary metrics into their open issues—no rigid tree, just a streamlined flow that responds to your filters.
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Priority Statistics */}
+                    <div className="mt-8 mb-6">
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                        <div className="bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200 rounded-lg p-4 text-center">
+                          <div className="text-2xl font-bold text-orange-800">{issueStatistics.highPriority}</div>
+                          <div className="text-sm text-orange-600 font-medium">High Priority</div>
+                        </div>
+                        <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4 text-center">
+                          <div className="text-2xl font-bold text-blue-800">{issueStatistics.mediumPriority}</div>
+                          <div className="text-sm text-blue-600 font-medium">Medium Priority</div>
+                        </div>
+                        <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-4 text-center">
+                          <div className="text-2xl font-bold text-green-800">{issueStatistics.lowPriority}</div>
+                          <div className="text-sm text-green-600 font-medium">Low Priority</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-12 space-y-10">
+                      {Object.entries(computedIssueCategories).map(([categoryKey, category], idx) => {
+                        const IconComponent = category.icon;
+                        const normalizedIssues = category.issues.map(issue => ({
+                          ...issue,
+                          issueCategory: issueCategorizationData[issue.id]?.type || issue.issueCategory
+                        }));
+                        const filteredIssues = applyAdvancedFilters(normalizedIssues);
+                        const filtersActive =
+                          statusFilter !== 'all' ||
+                          priorityFilter !== 'all' ||
+                          hasAdvancedFiltersActive();
+                        const visibleIssues =
+                          filtersActive
+                            ? filteredIssues
+                            : (filteredIssues.length > 0 ? filteredIssues : normalizedIssues);
+                        const solvedCount = visibleIssues.filter(issue => issue.status === 'solved').length;
+                        const unresolvedCount = Math.max(visibleIssues.length - solvedCount, 0);
+                        const totalCount = category.issues.length;
+                        const isExpanded = expandedNodes.has(categoryKey);
+                        const totalLabel = totalCount === 1 ? 'issue' : 'issues';
+                        const branchCountLabel = filtersActive
+                          ? `${visibleIssues.length} of ${totalCount} ${totalLabel}`
+                          : `${totalCount} ${totalLabel}`;
+
+                        return (
                           <motion.div
-                            key={issue.id}
-                            initial={{ opacity: 0, x: -20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            transition={{ delay: index * 0.1 }}
+                            key={categoryKey}
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.35, delay: idx * 0.05 }}
+                            className="relative overflow-hidden rounded-2xl border border-indigo-100 bg-gradient-to-br from-white/95 via-indigo-50/60 to-white/95 shadow-xl"
                           >
-                            <Card 
-                              className="cursor-pointer hover:shadow-lg transition-all duration-300 border border-gray-200 hover:border-indigo-300"
-                              onClick={() => openIssueResolutionPanel(issue)}
-                            >
-                              <CardContent className="p-4">
-                                <div className="flex items-start justify-between mb-2">
-                                  <h5 className="font-semibold text-gray-800">{issue.title}</h5>
-                                  <Badge 
-                                    className={`text-xs ${
-                                      issue.priority === 'critical' ? 'bg-red-100 text-red-800' :
-                                      issue.priority === 'high' ? 'bg-yellow-100 text-yellow-800' :
-                                      issue.priority === 'medium' ? 'bg-blue-100 text-blue-800' :
-                                      'bg-purple-100 text-purple-800'
-                                    }`}
-                                  >
-                                    {issue.priority.toUpperCase()}
-                                  </Badge>
-                                </div>
-                                <p className="text-sm text-gray-600 mb-2">{issue.description}</p>
-                                <div className="flex items-center justify-between text-xs text-gray-500">
-                                  <span>ID: {issue.id.replace(/^\D+/, '')}</span>
-                                  <div className="flex items-center gap-2">
-                                    {issue.status === 'solved' ? (
-                                      <CheckCircle className="w-4 h-4 text-green-600" />
-                                    ) : (
-                                      <XCircle className="w-4 h-4 text-red-600" />
-                                    )}
-                                    <span className={issue.status === 'solved' ? 'text-green-600' : 'text-red-600'}>
-                                      {issue.status.toUpperCase()}
-                                    </span>
+                            <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${category.color} opacity-20 blur-2xl`} />
+                            <div className="relative p-6 md:p-8">
+                              <div className="flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+                                <div className="flex items-start gap-4">
+                                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white shadow-md ring-2 ring-indigo-100">
+                                    <IconComponent className="h-6 w-6 text-indigo-600" />
+                                  </div>
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-3">
+                                      <h4 className="text-lg font-semibold text-slate-900">{category.name}</h4>
+                                      <Badge className="bg-indigo-100 text-indigo-800">
+                                        {branchCountLabel}
+                                      </Badge>
+                                    </div>
+                                    <p className="mt-1 text-sm text-slate-500">
+                                      {category.description || 'Review the highlights and active work items flowing through this category.'}
+                                    </p>
                                   </div>
                                 </div>
-                              </CardContent>
-                            </Card>
+
+                                <div className="flex flex-wrap items-center gap-3">
+                                  <div className="flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-xs font-medium text-slate-600 shadow-inner">
+                                    <span className="h-2 w-2 rounded-full bg-emerald-400" />
+                                    {solvedCount} resolved
+                                  </div>
+                                  <div className="flex items-center gap-2 rounded-full bg-white/80 px-4 py-2 text-xs font-medium text-slate-600 shadow-inner">
+                                    <span className="h-2 w-2 rounded-full bg-rose-400" />
+                                    {unresolvedCount} pending
+                                  </div>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => toggleNode(categoryKey)}
+                                    className="flex items-center gap-2 border-indigo-200 text-indigo-600 hover:bg-indigo-50"
+                                  >
+                                    <span className={`transition-transform ${isExpanded ? 'rotate-180' : ''}`}>
+                                      <ChevronDown className="h-4 w-4" />
+                                    </span>
+                                    {isExpanded ? 'Hide flow' : 'Show flow'}
+                                  </Button>
+                                </div>
+                              </div>
+
+                              <div className="mt-6 grid grid-cols-1 gap-4 text-sm text-slate-600 md:grid-cols-3">
+                                <div className="rounded-xl border border-indigo-100/60 bg-white/80 p-4 shadow-inner">
+                                  <p className="text-xs font-medium uppercase text-indigo-500/80">Total in category</p>
+                                  <p className="mt-2 text-2xl font-semibold text-slate-900">{totalCount}</p>
+                                </div>
+                                <div className="rounded-xl border border-indigo-100/60 bg-white/80 p-4 shadow-inner">
+                                  <p className="text-xs font-medium uppercase text-emerald-500/80">Resolved</p>
+                                  <p className="mt-2 text-2xl font-semibold text-emerald-600">{solvedCount}</p>
+                                </div>
+                                <div className="rounded-xl border border-indigo-100/60 bg-white/80 p-4 shadow-inner">
+                                  <p className="text-xs font-medium uppercase text-rose-500/80">Pending</p>
+                                  <p className="mt-2 text-2xl font-semibold text-rose-500">{unresolvedCount}</p>
+                                </div>
+                              </div>
+
+                              {isExpanded && (
+                                <motion.div
+                                  initial={{ opacity: 0, y: -10 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  className="mt-8 space-y-6"
+                                >
+                                  <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-indigo-500/80">
+                                    <span className="h-2 w-2 rounded-full bg-indigo-400" />
+                                    Issue stream
+                                  </div>
+
+                                  {visibleIssues.length === 0 ? (
+                                    <div className="rounded-2xl border border-dashed border-indigo-200/70 bg-white/80 p-6 text-center text-sm text-slate-500">
+                                      {filtersActive
+                                        ? 'No issues match the current filters.'
+                                        : 'No issues have been categorized under this flow yet.'}
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-4">
+                                      {visibleIssues.map((issue, issueIdx) => (
+                                        <motion.div
+                                          key={issue.id}
+                                          initial={{ opacity: 0, x: -12 }}
+                                          animate={{ opacity: 1, x: 0 }}
+                                          transition={{ delay: issueIdx * 0.05 }}
+                                        >
+                                          <Card
+                                            className="relative cursor-pointer overflow-hidden border border-indigo-100/80 bg-white/95 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-indigo-300 hover:shadow-lg"
+                                            onClick={() => openIssueResolutionPanel(issue)}
+                                          >
+                                            <span className="absolute left-0 top-0 h-full w-1 bg-gradient-to-b from-indigo-400 via-purple-400 to-indigo-400" />
+                                            <CardContent className="py-5 pl-6 pr-5 md:pl-7 md:pr-6">
+                                              <div className="flex flex-col gap-4 md:flex-row md:justify-between">
+                                                <div>
+                                                  <div className="flex flex-wrap items-center gap-3">
+                                                    <h5 className="text-base font-semibold text-slate-900">{issue.title}</h5>
+                                                    {issueCategorizationData[issue.id]?.type && (
+                                                      <Badge className="bg-emerald-100 text-emerald-700">
+                                                        Categorized
+                                                      </Badge>
+                                                    )}
+                                                  </div>
+                                                  <p className="mt-2 text-sm text-slate-600">
+                                                    {issue.description || 'No description provided.'}
+                                                  </p>
+                                                  <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                                                    <span className="flex items-center gap-1">
+                                                      <CircleDot className="h-3 w-3 text-indigo-400" />
+                                                      {(issue.channel || 'unknown').toUpperCase()}
+                                                    </span>
+                                                    <span className="flex items-center gap-1">
+                                                      <Clock className="h-3 w-3 text-indigo-400" />
+                                                      {issue.createdDate ? new Date(issue.createdDate).toLocaleDateString() : 'Date pending'}
+                                                    </span>
+                                                    <span className="flex items-center gap-1">
+                                                      <User className="h-3 w-3 text-indigo-400" />
+                                                      {issue.assignedTo || 'Unassigned'}
+                                                    </span>
+                                                  </div>
+                                                </div>
+                                                <div className="flex items-end justify-between gap-3 md:flex-col md:items-end">
+                                                  <Badge
+                                                    className={`text-xs ${
+                                                      issue.priority === 'critical'
+                                                        ? 'bg-red-100 text-red-700'
+                                                        : issue.priority === 'high'
+                                                        ? 'bg-orange-100 text-orange-700'
+                                                        : issue.priority === 'medium'
+                                                        ? 'bg-yellow-100 text-yellow-700'
+                                                        : 'bg-indigo-100 text-indigo-700'
+                                                    }`}
+                                                  >
+                                                    {(issue.priority || 'low').toUpperCase()}
+                                                  </Badge>
+                                                  <div className="flex items-center gap-2 text-xs">
+                                                    {issue.status === 'solved' ? (
+                                                      <>
+                                                        <CheckCircle className="h-4 w-4 text-emerald-500" />
+                                                        <span className="font-medium text-emerald-600">Resolved</span>
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        <AlertCircle className="h-4 w-4 text-rose-500" />
+                                                        <span className="font-medium text-rose-500">Pending</span>
+                                                      </>
+                                                    )}
+                                                  </div>
+                                                </div>
+                                              </div>
+                                            </CardContent>
+                                          </Card>
+                                        </motion.div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </motion.div>
+                              )}
+                            </div>
                           </motion.div>
-                        ))}
-                      </div>
-                    </motion.div>
-                  )
-                ))}
+                        );
+                      })}
+                    </div>
+                  </div>
+                </motion.div>
               </motion.div>
             )}
           </div>
@@ -2944,6 +3296,541 @@ Dr. Williams: Thank you. That helps.
           </Card>
         </div>
       </div>
+        </>
+      )}
+
+      {/* Issue Tracker Only View */}
+      {viewMode === 'issueTracker' && (
+        <div className="space-y-6">
+          <Card className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white">
+            <CardHeader>
+              <CardTitle className="text-2xl flex items-center gap-3">
+                <AlertTriangle className="w-8 h-8" />
+                Issue Categorization & Tracker
+              </CardTitle>
+            </CardHeader>
+          </Card>
+
+          {/* Clear All Filters Button */}
+          {(statusFilter !== 'all' || priorityFilter !== 'all' || hasAdvancedFiltersActive()) && (
+            <div className="flex justify-end">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setStatusFilter('all');
+                  setPriorityFilter('all');
+                  setRegionTypeFilter('all');
+                  setRegionNameFilter('all');
+                  setCategoryFilter('all');
+                  setChannelFilter('all');
+                  setDateFilter('all');
+                  setStartDate('');
+                  setEndDate('');
+                }}
+                className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
+              >
+                <XCircle className="w-4 h-4" />
+                Clear All Filters
+              </Button>
+            </div>
+          )}
+
+          {/* Issue Statistics & Priority Filter */}
+          <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 mb-6">
+            {/* Status Filter Cards */}
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 flex-1">
+              {/* All Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-gray-50 to-gray-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'all' ? 'border-gray-600 ring-2 ring-gray-300' : 'border-gray-200'
+                }`}
+                onClick={() => setStatusFilter('all')}
+              >
+                <div className="text-2xl font-bold text-gray-800">{issueStatistics.totalIssues}</div>
+                <div className="text-sm text-gray-600 font-medium">All</div>
+              </motion.div>
+              
+              {/* New Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-yellow-50 to-yellow-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'new' ? 'border-yellow-600 ring-2 ring-yellow-300' : 'border-yellow-200'
+                }`}
+                onClick={() => {
+                  setStatusFilter('new');
+                  setUnsolvedModalOpen(true);
+                }}
+              >
+                <div className="text-2xl font-bold text-yellow-800">{issueStatistics.newIssues}</div>
+                <div className="text-sm text-yellow-600 font-medium">New</div>
+              </motion.div>
+              
+              {/* Analyzed Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'analyzed' ? 'border-blue-600 ring-2 ring-blue-300' : 'border-blue-200'
+                }`}
+                onClick={() => {
+                  setStatusFilter('analyzed');
+                  setAnalyzedModalOpen(true);
+                }}
+              >
+                <div className="text-2xl font-bold text-blue-800">{issueStatistics.analyzedIssues}</div>
+                <div className="text-sm text-blue-600 font-medium">Analyzed</div>
+              </motion.div>
+              
+              {/* Catalyzed Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'catalyzed' ? 'border-purple-600 ring-2 ring-purple-300' : 'border-purple-200'
+                }`}
+                onClick={() => setStatusFilter('catalyzed')}
+              >
+                <div className="text-2xl font-bold text-purple-800">{issueStatistics.catalyzedIssues}</div>
+                <div className="text-sm text-purple-600 font-medium">Catalyzed</div>
+              </motion.div>
+              
+              {/* Resolved Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className={`text-center p-4 bg-gradient-to-br from-green-50 to-emerald-100 rounded-lg border-2 cursor-pointer transition-all duration-300 hover:shadow-lg ${
+                  statusFilter === 'resolved' ? 'border-green-600 ring-2 ring-green-300' : 'border-green-200'
+                }`}
+                onClick={() => setStatusFilter('resolved')}
+              >
+                <div className="text-2xl font-bold text-green-800">{issueStatistics.resolvedIssues}</div>
+                <div className="text-sm text-green-600 font-medium">Resolved</div>
+              </motion.div>
+              
+              {/* Opportunity Status */}
+              <motion.div 
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                className="text-center p-4 bg-gradient-to-br from-purple-50 to-pink-100 rounded-lg border-2 border-purple-200 cursor-pointer transition-all duration-300 hover:shadow-lg hover:border-purple-400"
+                onClick={() => setOpportunitiesModalOpen(true)}
+              >
+                <div className="text-2xl font-bold text-purple-800">{issueStatistics.opportunitiesCount}</div>
+                <div className="text-xs text-purple-600 font-medium">Opportunities</div>
+              </motion.div>
+            </div>
+
+            {/* Priority Filter Dropdown */}
+            <div className="w-full lg:w-64">
+              <label className="block text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+                <Filter className="w-4 h-4" />
+                Filter by Priority
+              </label>
+              <select
+                value={priorityFilter}
+                onChange={(e) => setPriorityFilter(e.target.value)}
+                className="w-full px-4 py-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm hover:border-gray-400 transition-colors text-sm font-medium"
+              >
+                <option value="all">All Priorities ({issueStatistics.totalIssues})</option>
+                <option value="high">🟡 High Priority ({issueStatistics.highPriority})</option>
+                <option value="medium">🔵 Medium Priority ({issueStatistics.mediumPriority})</option>
+                <option value="low">🟣 Low Priority ({issueStatistics.lowPriority})</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Advanced Filters Section */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                <Filter className="w-5 h-5 text-indigo-600" />
+                Advanced Filters
+              </h3>
+              {hasAdvancedFiltersActive() && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setRegionTypeFilter('all');
+                    setRegionNameFilter('all');
+                    setCategoryFilter('all');
+                    setChannelFilter('all');
+                    setDateFilter('all');
+                    setStartDate('');
+                    setEndDate('');
+                  }}
+                  className="flex items-center gap-2 text-red-600 border-red-300 hover:bg-red-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  Clear Advanced Filters
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* Region Type Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Region Type
+                </label>
+                <select
+                  value={regionTypeFilter}
+                  onChange={(e) => setRegionTypeFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-sm"
+                >
+                  <option value="all">All Types</option>
+                  <option value="urban">Urban</option>
+                  <option value="rural">Rural</option>
+                  <option value="suburban">Suburban</option>
+                </select>
+              </div>
+
+              {/* Region Name Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Region Name
+                </label>
+                <select
+                  value={regionNameFilter}
+                  onChange={(e) => setRegionNameFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-sm"
+                >
+                  <option value="all">All Regions</option>
+                  <option value="north">North</option>
+                  <option value="south">South</option>
+                  <option value="east">East</option>
+                  <option value="west">West</option>
+                  <option value="central">Central</option>
+                </select>
+              </div>
+
+              {/* Category Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Category
+                </label>
+                <select
+                  value={categoryFilter}
+                  onChange={(e) => setCategoryFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-sm"
+                >
+                  <option value="all">All Categories</option>
+                  <option value="Billing">Billing</option>
+                  <option value="Technical">Technical</option>
+                  <option value="Access">Access</option>
+                  <option value="Documentation">Documentation</option>
+                  <option value="Support">Support</option>
+                </select>
+              </div>
+
+              {/* Channel Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Channel
+                </label>
+                <select
+                  value={channelFilter}
+                  onChange={(e) => setChannelFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-sm"
+                >
+                  <option value="all">All Channels</option>
+                  <option value="email">Email</option>
+                  <option value="call">Call</option>
+                  <option value="ticket">Ticket</option>
+                </select>
+              </div>
+
+              {/* Date Filter */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Date Range
+                </label>
+                <select
+                  value={dateFilter}
+                  onChange={(e) => setDateFilter(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-sm"
+                >
+                  <option value="all">All Time</option>
+                  <option value="today">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month">This Month</option>
+                  <option value="custom">Custom Range</option>
+                </select>
+              </div>
+
+              {/* Custom Date Range (only show when custom is selected) */}
+              {dateFilter === 'custom' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Start Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={startDate}
+                      onChange={(e) => setStartDate(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      End Date
+                    </label>
+                    <Input
+                      type="date"
+                      value={endDate}
+                      onChange={(e) => setEndDate(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Active Filters Display */}
+            {hasAdvancedFiltersActive() && (
+              <div className="mt-4 flex flex-wrap gap-2">
+                <span className="text-sm font-medium text-gray-700">Active Filters:</span>
+                {regionTypeFilter !== 'all' && (
+                  <Badge variant="outline" className="bg-blue-50">
+                    Region Type: {regionTypeFilter}
+                  </Badge>
+                )}
+                {regionNameFilter !== 'all' && (
+                  <Badge variant="outline" className="bg-green-50">
+                    Region: {regionNameFilter}
+                  </Badge>
+                )}
+                {categoryFilter !== 'all' && (
+                  <Badge variant="outline" className="bg-purple-50">
+                    Category: {categoryFilter}
+                  </Badge>
+                )}
+                {channelFilter !== 'all' && (
+                  <Badge variant="outline" className="bg-orange-50">
+                    Channel: {channelFilter}
+                  </Badge>
+                )}
+                {dateFilter !== 'all' && (
+                  <Badge variant="outline" className="bg-pink-50">
+                    Date: {dateFilter === 'custom' ? `${startDate} to ${endDate}` : dateFilter}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Issue Categories Flowchart - Always Expanded */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="relative overflow-hidden rounded-3xl border border-indigo-100 bg-white/70 shadow-2xl backdrop-blur"
+            >
+              <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-indigo-400 via-purple-400 to-indigo-400" />
+              <div className="relative p-6 md:p-10">
+                <div className="flex flex-col items-center text-center">
+                  <div className="flex flex-col items-center">
+                    <div className="flex items-center gap-3 rounded-full bg-indigo-600/90 px-6 py-3 text-white shadow-lg">
+                      <GitBranch className="h-5 w-5" />
+                      <span className="text-sm font-semibold uppercase tracking-wide">
+                        Issue Categorization Flow
+                      </span>
+                    </div>
+                    <p className="mt-4 max-w-2xl text-sm text-indigo-900/80">
+                      Visualize how categories progress from summary metrics into their open issues—no rigid tree, just a streamlined flow that responds to your filters.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Priority Statistics */}
+                <div className="mt-8 mb-6">
+                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                    <div className="bg-gradient-to-br from-orange-50 to-orange-100 border border-orange-200 rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold text-orange-800">{issueStatistics.highPriority}</div>
+                      <div className="text-sm text-orange-600 font-medium">High Priority</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 border border-blue-200 rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold text-blue-800">{issueStatistics.mediumPriority}</div>
+                      <div className="text-sm text-blue-600 font-medium">Medium Priority</div>
+                    </div>
+                    <div className="bg-gradient-to-br from-green-50 to-green-100 border border-green-200 rounded-lg p-4 text-center">
+                      <div className="text-2xl font-bold text-green-800">{issueStatistics.lowPriority}</div>
+                      <div className="text-sm text-green-600 font-medium">Low Priority</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-12">
+                  {(() => {
+                    const entries = Object.entries(computedIssueCategories);
+                    const visible = entries.filter(([categoryKey, category]) => {
+                      const normalizedIssues = category.issues.map(issue => ({
+                        ...issue,
+                        issueCategory: issueCategorizationData[issue.id]?.type || issue.issueCategory
+                      }));
+                      const filteredIssues = applyAdvancedFilters(normalizedIssues);
+                      const filtersActive =
+                        statusFilter !== 'all' ||
+                        priorityFilter !== 'all' ||
+                        hasAdvancedFiltersActive();
+                      const visibleIssues = filtersActive ? filteredIssues : category.issues;
+                      return visibleIssues.length > 0;
+                    });
+                    const cols = Math.min(4, Math.max(1, visible.length));
+                    const positions = visible.map((_, idx) => ((idx + 0.5) / cols) * 100);
+                    const branchColors = ['#60a5fa', '#34d399', '#a78bfa', '#f59e0b'];
+                    return (
+                      <>
+                        {/* Root node and curved branches */}
+                        <div className="relative mb-8">
+                          <div className="absolute left-1/2 -translate-x-1/2 -top-2 h-8 w-6 rounded-b-2xl bg-gradient-to-b from-purple-600 to-rose-500 shadow" />
+                          <svg className="w-full h-14" viewBox="0 0 100 40" preserveAspectRatio="none">
+                            {positions.map((x, i) => (
+                              <path key={i} d={`M50,2 C50,12 ${x},10 ${x},24`} stroke={branchColors[i % branchColors.length]} strokeWidth="2" fill="none" opacity="0.7" />
+                            ))}
+                          </svg>
+                        </div>
+
+                      </>
+                    );
+                  })()}
+
+                  <div className="grid gap-10" style={{ gridTemplateColumns: `repeat(auto-fit, minmax(320px, 1fr))` }}>
+                      {Object.entries(computedIssueCategories).map(([categoryKey, category], idx) => {
+                    const IconComponent = category.icon;
+                    const normalizedIssues = category.issues.map(issue => ({
+                      ...issue,
+                      issueCategory: issueCategorizationData[issue.id]?.type || issue.issueCategory
+                    }));
+                    const filteredIssues = applyAdvancedFilters(normalizedIssues);
+                    const filtersActive =
+                      statusFilter !== 'all' ||
+                      priorityFilter !== 'all' ||
+                      hasAdvancedFiltersActive();
+                    const visibleIssues =
+                      filtersActive
+                        ? filteredIssues
+                        : category.issues;
+
+                    if (visibleIssues.length === 0) return null;
+
+                    return (
+                      <motion.div
+                        key={categoryKey}
+                        initial={{ opacity: 0, x: -20 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        transition={{ delay: idx * 0.1 }}
+                        className="relative"
+                      >
+                        {/* Category Header */}
+                        <button
+                          onClick={() => toggleNode(categoryKey)}
+                          className={`w-full text-left relative overflow-hidden rounded-2xl border-2 bg-gradient-to-r ${category.color} p-6 shadow-xl text-white transition-transform hover:scale-[1.01]`}
+                        >
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur">
+                                <IconComponent className="h-8 w-8" />
+                              </div>
+                              <div>
+                                <h3 className="text-2xl font-bold">{category.name}</h3>
+                                <div className="mt-1 flex items-center gap-2">
+                                  <Badge className="bg-white/20 text-white border-white/30">{visibleIssues.length} {visibleIssues.length === 1 ? 'issue' : 'issues'}</Badge>
+                                  {filtersActive && (
+                                    <span className="text-xs opacity-90">filtered from {category.count}</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <ChevronDown className={`w-6 h-6 transition-transform ${expandedNodes.has(categoryKey) ? 'rotate-180' : ''}`} />
+                          </div>
+                        </button>
+
+                        {/* Vertical connector below header */}
+                        <div className="flex justify-center">
+                          <div className="h-6 w-1 rounded-full bg-gradient-to-b from-indigo-300 to-indigo-500" />
+                        </div>
+
+                        {/* Issues List (collapsible) */}
+                        {expandedNodes.has(categoryKey) && (
+                          <div className="mt-4 space-y-3">
+                            {visibleIssues.map((issue, issueIdx) => (
+                              <motion.div
+                                key={issue.id}
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: issueIdx * 0.03 }}
+                                onClick={() => openIssueResolutionPanel(issue)}
+                                className="relative group cursor-pointer rounded-xl border-2 border-gray-200 bg-white p-4 shadow-sm transition-all hover:border-indigo-400 hover:shadow-lg"
+                              >
+                                {/* Left connector & dot */}
+                                <div className="absolute left-[-18px] top-1/2 -translate-y-1/2 h-0.5 w-4 bg-indigo-300" />
+                                <div className="absolute left-[-26px] top-1/2 -translate-y-1/2 h-4 w-4 rounded-full bg-white border-2 border-indigo-400 shadow" />
+
+                                <div className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <h4 className="font-semibold text-gray-900 group-hover:text-indigo-600">
+                                        {issue.title}
+                                      </h4>
+                                      <Badge variant="outline" className="text-xs">
+                                        {issue.id}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-sm text-gray-600 mb-2 line-clamp-2">{issue.description}</p>
+                                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                                      <span className="flex items-center gap-1">
+                                        <Calendar className="w-3 h-3" />
+                                        {issue.createdDate}
+                                      </span>
+                                      <span className="flex items-center gap-1">
+                                        <User className="w-3 h-3" />
+                                        {issue.assignedTo}
+                                      </span>
+                                      {(issue.channel || issue.source) && (
+                                        <Badge className="text-xs">
+                                          {issue.channel?.toUpperCase() || issue.source}
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex flex-col items-end gap-2">
+                                    <Badge className={`${
+                                      issue.status === 'solved' ? 'bg-green-100 text-green-800' :
+                                      'bg-yellow-100 text-yellow-800'
+                                    }`}>
+                                      {issue.status.toUpperCase()}
+                                    </Badge>
+                                  <Badge className={`${
+                                      calculateDynamicPriority(issue).finalPriority === 'high' ? 'bg-orange-100 text-orange-800' :
+                                      calculateDynamicPriority(issue).finalPriority === 'medium' ? 'bg-blue-100 text-blue-800' :
+                                      'bg-green-100 text-green-800'
+                                    }`}>
+                                      {calculateDynamicPriority(issue).finalPriority.toUpperCase()}
+                                    </Badge>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </div>
+                        )}
+                          </motion.div>
+                        );
+                      })}
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        </div>
+      )}
 
       {/* Sub-node Statistics Modal */}
       <Dialog open={subNodeModalOpen} onOpenChange={setSubNodeModalOpen}>
@@ -3982,9 +4869,23 @@ Dr. Williams: Thank you. That helps.
       <Dialog open={issueResolutionPanel.open} onOpenChange={closeIssueResolutionPanel}>
         <DialogContent className="max-w-6xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
               <AlertTriangle className="w-6 h-6 text-red-600" />
               Issue Resolution Panel
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  closeIssueResolutionPanel();
+                  setAnalyzedModalOpen(true);
+                }}
+                className="flex items-center gap-2"
+              >
+                <ArrowRight className="w-4 h-4 rotate-180" />
+                Back to Analyzed Issues
+              </Button>
             </DialogTitle>
             <DialogDescription>
               Detailed issue analysis and resolution workflow
@@ -4168,20 +5069,12 @@ Dr. Williams: Thank you. That helps.
                     </Badge>
                   </div>
                     )}
-                    <div className="flex items-center gap-1">
-                      <span className="font-medium">Source:</span>
-                      <Badge variant="outline" className="text-xs">{issueResolutionPanel.issue.source}</Badge>
-                </div>
+                  
                     <div className="flex items-center gap-1">
                       <span className="font-medium">Category:</span>
                       <Badge variant="outline" className="text-xs">{issueResolutionPanel.issue.category}</Badge>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <span className="font-medium">Priority Score:</span>
-                      <span className="font-mono text-xs bg-gray-200 px-2 py-0.5 rounded">
-                        {Math.round(dynamicPriority.priorityScore)}
-                      </span>
-                    </div>
+                    
                   </div>
                 </div>
                 
@@ -4208,15 +5101,9 @@ Dr. Williams: Thank you. That helps.
                 }
                 setIssueResolutionPanel({...issueResolutionPanel, activeTab: value})
               }}>
-                <TabsList className="grid grid-cols-5 w-full">
+              <TabsList className="grid grid-cols-3 w-full">
                   <TabsTrigger value="details">
                     Details
-                  </TabsTrigger>
-                  <TabsTrigger value="analysis">
-                    Analysis
-                    {!isResolutionEnabled && (
-                      <Badge className="ml-2 bg-orange-100 text-orange-800 text-xs">Validation Required</Badge>
-                    )}
                   </TabsTrigger>
                   <TabsTrigger 
                     value="resolution" 
@@ -4234,7 +5121,6 @@ Dr. Williams: Thank you. That helps.
                     </div>
                   </TabsTrigger>
                   <TabsTrigger value="history">History</TabsTrigger>
-                  <TabsTrigger value="channel">Channel</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="details" className="space-y-4">
@@ -4314,120 +5200,7 @@ Dr. Williams: Thank you. That helps.
                         </CardContent>
                       </Card>
                     )}
-
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Issue Information</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Issue ID:</span>
-                            <span className="font-medium font-mono bg-gray-100 px-2 py-1 rounded">{issueResolutionPanel.issue.id}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Created Date:</span>
-                          <span className="font-medium">{issueResolutionPanel.issue.createdDate}</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-gray-600">Assigned To:</span>
-                            <Badge variant="outline" className="font-medium">{issueResolutionPanel.issue.assignedTo}</Badge>
-                        </div>
-                        {issueResolutionPanel.issue.solvedDate && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Solved Date:</span>
-                            <span className="font-medium">{issueResolutionPanel.issue.solvedDate}</span>
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader>
-                        <CardTitle className="text-lg">Suggested Actions</CardTitle>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        <div className="space-y-2">
-                          <Button 
-                            onClick={() => contactVia('call', { phone: '+1-555-SUPPORT' })}
-                            className="w-full justify-start hover:bg-green-50" 
-                            variant="outline"
-                          >
-                            <Phone className="w-4 h-4 mr-2" />
-                            Contact Support Team
-                          </Button>
-                          <Button 
-                            onClick={() => {
-                              const email = emailTemplates[issueResolutionPanel.issue?.id];
-                              if (email) {
-                                setSelectedEmail(email);
-                                setEmailViewerOpen(true);
-                              } else {
-                                contactVia('email', { 
-                              email: 'support@company.com',
-                              subject: `Issue Follow-up: ${issueResolutionPanel.issue?.title}`,
-                              body: `Regarding issue ${issueResolutionPanel.issue?.id}: ${issueResolutionPanel.issue?.description}`
-                                });
-                              }
-                            }}
-                            className="w-full justify-start hover:bg-blue-50" 
-                            variant="outline"
-                          >
-                            <Mail className="w-4 h-4 mr-2" />
-                            Send Email Update
-                          </Button>
-                          <Button 
-                            onClick={() => {
-                              // Could open a priority update modal or form
-                              alert('Priority update feature would be implemented here');
-                            }}
-                            className="w-full justify-start hover:bg-yellow-50" 
-                            variant="outline"
-                          >
-                            <Edit className="w-4 h-4 mr-2" />
-                            Update Priority
-                          </Button>
-                          <Button 
-                            onClick={() => contactVia('email', { 
-                              email: 'management@company.com',
-                              subject: `Escalation Required: ${issueResolutionPanel.issue?.title}`,
-                              body: `This issue requires management attention:\n\nIssue: ${issueResolutionPanel.issue?.title}\nDescription: ${issueResolutionPanel.issue?.description}\nPriority: ${issueResolutionPanel.issue?.priority}\nAssigned to: ${issueResolutionPanel.issue?.assignedTo}`
-                            })}
-                            className="w-full justify-start hover:bg-red-50" 
-                            variant="outline"
-                          >
-                            <Users className="w-4 h-4 mr-2" />
-                            Escalate to Manager
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                    </div>
-                  </div>
-                </TabsContent>
-
-                <TabsContent value="channel" className="space-y-4">
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-lg flex items-center gap-2">
-                        Channel
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {(() => {
-                        const info = channelTypes[issueResolutionPanel.issue?.channel] || channelTypes.email;
-                        return (
-                          <div className="flex items-center gap-3">
-                            <Badge className={info.color}>{info.emoji} {info.label}</Badge>
-                            <span className="text-sm text-gray-600">Source: {issueResolutionPanel.issue?.source || '—'}</span>
-                          </div>
-                        );
-                      })()}
-                    </CardContent>
-                  </Card>
-                </TabsContent>
-
-                <TabsContent value="analysis" className="space-y-4">
+                    {/* Inline Analysis (moved from former Analysis tab) */}
                   <Card>
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center justify-between">
@@ -4454,7 +5227,6 @@ Dr. Williams: Thank you. That helps.
                             onClick={() => {
                               if (issueAnalysis.length > 50) {
                                 setIssueAnalysisValid(true);
-                                // Save analysis with user and timestamp
                                 const newAnalysis = {
                                   id: Date.now(),
                                   content: issueAnalysis,
@@ -4463,10 +5235,8 @@ Dr. Williams: Thank you. That helps.
                                   issueId: issueResolutionPanel.issue?.id
                                 };
                                 setAnalysisHistory(prev => [...prev, newAnalysis]);
-                                // Clear the textarea for next analysis
                                 setIssueAnalysis('');
-                                // Show success message
-                                alert('✅ Analysis saved successfully!\n\nPlease validate the analysis to unlock the Resolution tab.');
+                                  alert('✅ Analysis saved successfully!');
                               }
                             }}
                           className="bg-indigo-600 hover:bg-indigo-700"
@@ -4486,7 +5256,6 @@ Dr. Williams: Thank you. That helps.
                       </div>
                       </div>
 
-                      {/* Analysis History */}
                       {analysisHistory.filter(a => a.issueId === issueResolutionPanel.issue?.id).length > 0 && (
                         <div className="mt-6 space-y-3">
                           <h4 className="font-semibold text-gray-700 flex items-center gap-2">
@@ -4527,7 +5296,7 @@ Dr. Williams: Thank you. That helps.
                                           const newValidated = new Set(validatedAnalyses);
                                           newValidated.add(analysis.id);
                                           setValidatedAnalyses(newValidated);
-                                          alert(`✅ Analysis validated successfully by ${currentUser}!\n\nThe Resolution tab is now unlocked. You can proceed to create a resolution for this issue.`);
+                                            alert(`✅ Analysis validated successfully by ${currentUser}!`);
                                         }}
                                         className="bg-green-600 hover:bg-green-700 text-white h-7 text-xs px-3"
                                       >
@@ -4549,6 +5318,7 @@ Dr. Williams: Thank you. That helps.
                       )}
                     </CardContent>
                   </Card>
+                  </div>
                 </TabsContent>
                 <TabsContent value="resolution" className="space-y-4">
                   {/* Show warning if resolution is not enabled */}
@@ -4572,7 +5342,7 @@ Dr. Williams: Thank you. That helps.
                           <div className="bg-white rounded-lg p-4 border border-orange-200">
                             <p className="text-sm font-semibold text-orange-900 mb-2">To unlock this tab:</p>
                             <ol className="text-sm text-orange-800 space-y-1 ml-5 list-decimal">
-                              <li>Go to the <strong>Analysis</strong> tab</li>
+                              <li>Go to the <strong>Details</strong> section</li>
                               <li>Write a detailed analysis (minimum 50 characters)</li>
                               <li>Click <strong>"Save Analysis"</strong> button</li>
                               <li>Click <strong>"Validate"</strong> button on the saved analysis</li>
@@ -4580,11 +5350,11 @@ Dr. Williams: Thank you. That helps.
                             </ol>
                           </div>
                           <Button
-                            onClick={() => setIssueResolutionPanel({...issueResolutionPanel, activeTab: 'analysis'})}
+                            onClick={() => setIssueResolutionPanel({...issueResolutionPanel, activeTab: 'details'})}
                             className="mt-4 bg-orange-600 hover:bg-orange-700 text-white"
                           >
                             <Edit className="w-4 h-4 mr-2" />
-                            Go to Analysis Tab
+                            Go to Details
                           </Button>
                         </div>
                       </div>
@@ -5534,58 +6304,7 @@ Dr. Williams: Thank you. That helps.
         </DialogContent>
       </Dialog>
 
-      {/* Quick Actions */}
-      <Card className="shadow-lg border-0 bg-white/90 backdrop-blur-xl">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Target className="w-6 h-6 text-indigo-600" />
-            Quick Actions & Reports
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <Button 
-              onClick={() => setBilledPatientsModalOpen(true)}
-              className="h-auto p-4 flex flex-col items-center gap-2 bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
-              variant="outline"
-            >
-              <CheckCircle className="w-6 h-6" />
-              <span className="text-sm font-medium">Billed Patients</span>
-              <span className="text-xs opacity-70">89 Patients</span>
-            </Button>
-
-            <Button 
-              onClick={() => setUnpreparedDocumentsModalOpen(true)}
-              className="h-auto p-4 flex flex-col items-center gap-2 bg-orange-50 hover:bg-orange-100 text-orange-700 border-orange-200"
-              variant="outline"
-            >
-              <Clock className="w-6 h-6" />
-              <span className="text-sm font-medium">Pending Docs</span>
-              <span className="text-xs opacity-70">8 Documents</span>
-            </Button>
-
-            <Button 
-              onClick={() => setClaimsSubmittedModalOpen(true)}
-              className="h-auto p-4 flex flex-col items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200"
-              variant="outline"
-            >
-              <DollarSign className="w-6 h-6" />
-              <span className="text-sm font-medium">Claims</span>
-              <span className="text-xs opacity-70">2,158 Submitted</span>
-            </Button>
-
-            <Button 
-              onClick={() => setRevenueGeneratedModalOpen(true)}
-              className="h-auto p-4 flex flex-col items-center gap-2 bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
-              variant="outline"
-            >
-              <Star className="w-6 h-6" />
-              <span className="text-sm font-medium">Revenue</span>
-              <span className="text-xs opacity-70">$1.2M Generated</span>
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+      {/* Quick Actions removed per request */}
 
       {/* Document List Modal */}
       <Dialog open={documentListModalOpen} onOpenChange={setDocumentListModalOpen}>
@@ -5602,61 +6321,85 @@ Dr. Williams: Thank you. That helps.
           
           {selectedDocumentType && (
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <Badge variant="outline" className="text-blue-700 bg-blue-50">
                   Total: {getDocumentCount(selectedDocumentType)} {selectedDocumentType}
                 </Badge>
-                <Button size="sm" className="flex items-center gap-2">
-                  <Download className="w-4 h-4" />
-                  Export List
-                </Button>
+                <div className="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center md:gap-3">
+                  <div className="relative w-full md:w-64">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-indigo-400" />
+                    <Input
+                      value={documentSearchTerm}
+                      onChange={(e) => setDocumentSearchTerm(e.target.value)}
+                      placeholder="Search by patient name"
+                      className="pl-9"
+                    />
+                  </div>
+                  <Button size="sm" className="flex items-center gap-2">
+                    <Download className="w-4 h-4" />
+                    Export List
+                  </Button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 gap-4">
-                {getDocumentList(selectedDocumentType).map((document, index) => (
-                  <motion.div
-                    key={document.id}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.05 }}
-                  >
-                    <Card className="p-4 hover:shadow-lg transition-all duration-300 border border-gray-200 hover:border-blue-300">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <FileText className="w-6 h-6 text-blue-600" />
-                          </div>
-                          <div>
-                            <h4 className="font-semibold text-gray-800">{document.name}</h4>
-                            <p className="text-sm text-gray-600">Patient: {document.patientName}</p>
-                            <p className="text-xs text-gray-500">ID: {document.id}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-4">
-                          <div className="text-right">
-                            <div className="text-sm font-medium text-gray-800">{document.status}</div>
-                            <div className="text-xs text-gray-500">{document.date}</div>
-                          </div>
-                          <Badge 
-                            className={`${
-                              document.status === 'Processed' ? 'bg-green-100 text-green-800' :
-                              document.status === 'Prepared' ? 'bg-blue-100 text-blue-800' :
-                              document.status === 'Signed' ? 'bg-purple-100 text-purple-800' :
-                              'bg-red-100 text-red-800'
-                            }`}
-                          >
-                            {document.status}
-                          </Badge>
-                          <Button size="sm" variant="outline">
-                            <Eye className="w-4 h-4 mr-1" />
-                            View
-                          </Button>
-                        </div>
-                      </div>
-                    </Card>
-                  </motion.div>
-                ))}
+              <div className="text-xs text-gray-500">
+                Showing {filteredDocumentsForModal.length} of {documentsForSelectedType.length} records
+                {documentSearchTerm.trim() && (
+                  <span> for "{documentSearchTerm.trim()}"</span>
+                )}
               </div>
+
+              {filteredDocumentsForModal.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-blue-200 bg-blue-50/60 p-6 text-center text-sm text-blue-700">
+                  No documents found for the current search.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-4">
+                  {filteredDocumentsForModal.map((document, index) => (
+                    <motion.div
+                      key={document.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                    >
+                      <Card className="p-4 hover:shadow-lg transition-all duration-300 border border-gray-200 hover:border-blue-300">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                              <FileText className="w-6 h-6 text-blue-600" />
+                            </div>
+                            <div>
+                              <h4 className="font-semibold text-gray-800">{document.name}</h4>
+                              <p className="text-sm text-gray-600">Patient: {document.patientName}</p>
+                              <p className="text-xs text-gray-500">ID: {document.id}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-4">
+                            <div className="text-right">
+                              <div className="text-sm font-medium text-gray-800">{document.status}</div>
+                              <div className="text-xs text-gray-500">{document.date}</div>
+                            </div>
+                            <Badge 
+                              className={`${
+                                document.status === 'Processed' ? 'bg-green-100 text-green-800' :
+                                document.status === 'Prepared' ? 'bg-blue-100 text-blue-800' :
+                                document.status === 'Signed' ? 'bg-purple-100 text-purple-800' :
+                                'bg-red-100 text-red-800'
+                              }`}
+                            >
+                              {document.status}
+                            </Badge>
+                            <Button size="sm" variant="outline">
+                              <Eye className="w-4 h-4 mr-1" />
+                              View
+                            </Button>
+                          </div>
+                        </div>
+                      </Card>
+                    </motion.div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </DialogContent>
@@ -6083,6 +6826,304 @@ Dr. Williams: Thank you. That helps.
                 </CardContent>
               </Card>
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Analyzed Issues Validation Modal */}
+      <Dialog open={analyzedModalOpen} onOpenChange={setAnalyzedModalOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center">
+                <BarChart3 className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-900">Analyzed Issues</div>
+                <div className="text-sm font-normal text-gray-500 mt-1">
+                  Validate analyses directly from here
+                </div>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4 mt-4">
+            {analyzedIssuesList.length === 0 && (
+              <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
+                <CardContent className="p-6 text-center">
+                  <div className="text-lg text-gray-700">No analyses have been saved yet.</div>
+                </CardContent>
+              </Card>
+            )}
+
+            {analyzedIssuesList.map(({ issueId, analyses }) => (
+              <Card key={issueId} className="border-blue-200">
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono">{issueId}</Badge>
+                      <span className="text-gray-700">Analyses: {analyses.length}</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {analyses.some(a => validatedAnalyses.has(a.id)) ? (
+                        <Badge className="bg-green-100 text-green-800">Validated</Badge>
+                      ) : (
+                        <Badge className="bg-orange-100 text-orange-800">Pending Validation</Badge>
+                      )}
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Issue Details */}
+                  {(() => {
+                    const issue = getAllIssues().find(i => i.id === issueId) || {};
+                    return (
+                      <div className="mb-4 p-3 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-blue-900">{issue.title || 'Issue'}</div>
+                            {issue.description && (
+                              <div className="text-sm text-gray-700 mt-1">{issue.description}</div>
+                            )}
+                          </div>
+                          {issue.status && (
+                            <Badge className={`${issue.status === 'solved' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>{(issue.status || '').toUpperCase()}</Badge>
+                          )}
+                        </div>
+                        <div className="mt-2 text-xs text-gray-600 flex flex-wrap items-center gap-4">
+                          {issue.assignedTo && (
+                            <span className="flex items-center gap-1"><User className="w-3 h-3" /> Assigned: {issue.assignedTo}</span>
+                          )}
+                          {issue.createdDate && (
+                            <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {issue.createdDate}</span>
+                          )}
+                          {issue.category && (
+                            <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {issue.category}</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  <div className="space-y-3">
+                    {analyses.map((analysis) => (
+                      <div key={analysis.id} className="bg-white border border-blue-100 rounded-lg p-3">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <div className="text-sm text-gray-700 mb-2">{analysis.content}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-2">
+                              <User className="w-3 h-3" /> {analysis.user}
+                              <Clock className="w-3 h-3 ml-2" /> {analysis.timestamp}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {validatedAnalyses.has(analysis.id) ? (
+                              <Badge className="bg-green-100 text-green-800 flex items-center gap-1">
+                                <CheckCircle className="w-3 h-3" /> Validated
+                              </Badge>
+                            ) : (
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white"
+                                onClick={() => {
+                                  const newValidated = new Set(validatedAnalyses);
+                                  newValidated.add(analysis.id);
+                                  setValidatedAnalyses(newValidated);
+                                }}
+                              >
+                                <CheckCircle className="w-3 h-3 mr-1" /> Validate
+                              </Button>
+                            )}
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                const issue = getAllIssues().find(i => i.id === issueId);
+                                if (issue) {
+                                  openIssueResolutionPanel(issue);
+                                  setAnalyzedModalOpen(false);
+                                }
+                              }}
+                            >
+                              Open Issue
+                            </Button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Opportunities Modal */}
+      <Dialog open={opportunitiesModalOpen} onOpenChange={setOpportunitiesModalOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-3">
+              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-600 rounded-lg flex items-center justify-center">
+                <Star className="w-7 h-7 text-white" />
+              </div>
+              <div>
+                <div className="text-2xl font-bold text-gray-900">Opportunities Created</div>
+                <div className="text-sm font-normal text-gray-500 mt-1">
+                  All opportunities identified from issue resolutions
+                </div>
+              </div>
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Summary Statistics */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
+                <CardContent className="p-4 text-center">
+                  <div className="text-3xl font-bold text-purple-800 mb-1">{savedOpportunities.length}</div>
+                  <div className="text-sm text-purple-600 font-medium">Total Opportunities</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+                <CardContent className="p-4 text-center">
+                  <div className="text-3xl font-bold text-green-800 mb-1">
+                    {savedOpportunities.filter(opp => opp.status === 'active').length}
+                  </div>
+                  <div className="text-sm text-green-600 font-medium">Active Opportunities</div>
+                </CardContent>
+              </Card>
+              <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+                <CardContent className="p-4 text-center">
+                  <div className="text-3xl font-bold text-blue-800 mb-1">
+                    {new Set(savedOpportunities.map(opp => opp.createdBy)).size}
+                  </div>
+                  <div className="text-sm text-blue-600 font-medium">Contributors</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Instructions */}
+            <Card className="bg-gradient-to-r from-purple-50 to-pink-50 border-purple-200">
+              <CardContent className="p-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 bg-purple-600 rounded-full flex items-center justify-center flex-shrink-0">
+                    <Star className="w-5 h-5 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="font-semibold text-purple-900 mb-2">Opportunities Overview</h4>
+                    <p className="text-sm text-purple-800 mb-2">
+                      These opportunities were identified during issue resolution processes. Each opportunity represents a potential improvement or business growth area discovered while solving customer issues.
+                    </p>
+                    <ul className="text-sm text-purple-700 space-y-1 ml-5 list-disc">
+                      <li>Click on any opportunity to view full details</li>
+                      <li>Opportunities are created by team members during issue resolution</li>
+                      <li>Track progress and implementation status</li>
+                    </ul>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Opportunities List */}
+            <div className="space-y-4">
+              {savedOpportunities.length > 0 ? (
+                savedOpportunities.map((opportunity, index) => (
+                  <motion.div
+                    key={opportunity.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                  >
+                    <Card className="border-2 border-purple-200 bg-gradient-to-r from-purple-50/30 to-pink-50/30 hover:shadow-lg transition-all duration-300">
+                      <CardContent className="p-6">
+                        {/* Opportunity Header */}
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <h3 className="text-lg font-bold text-gray-900">{opportunity.issueTitle}</h3>
+                              <Badge className="bg-purple-100 text-purple-800 border-purple-300">
+                                <Star className="w-3 h-3 mr-1" />
+                                Opportunity
+                              </Badge>
+                            </div>
+                            <p className="text-sm text-gray-600 mb-3">{opportunity.issueDescription}</p>
+                            <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <span className="flex items-center gap-1">
+                                <User className="w-3 h-3" />
+                                Created by: {opportunity.createdBy}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Calendar className="w-3 h-3" />
+                                {opportunity.createdAt}
+                              </span>
+                              <span className="flex items-center gap-1">
+                                <Badge className={`${
+                                  opportunity.status === 'active' 
+                                    ? 'bg-green-100 text-green-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {opportunity.status}
+                                </Badge>
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Opportunity Details */}
+                        <div className="bg-white p-4 rounded-lg border border-purple-200">
+                          <h4 className="font-semibold text-purple-900 mb-3 flex items-center gap-2">
+                            <Star className="w-4 h-4" />
+                            Opportunity Identified
+                          </h4>
+                          <p className="text-sm text-gray-800 leading-relaxed">
+                            {opportunity.opportunity}
+                          </p>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center gap-2 mt-4">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300"
+                            onClick={() => {
+                              // Could open a detailed view or edit modal
+                              alert(`Viewing opportunity details for: ${opportunity.issueTitle}`);
+                            }}
+                          >
+                            <Eye className="w-4 h-4" />
+                            View Details
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="flex items-center gap-2 hover:bg-green-50 hover:text-green-700 hover:border-green-300"
+                            onClick={() => {
+                              // Could mark as implemented or update status
+                              alert(`Marking opportunity as implemented: ${opportunity.issueTitle}`);
+                            }}
+                          >
+                            <CheckCircle className="w-4 h-4" />
+                            Mark Implemented
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                ))
+              ) : (
+                <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-gray-200">
+                  <CardContent className="p-8 text-center">
+                    <Star className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+                    <h3 className="text-xl font-bold text-gray-600 mb-2">No Opportunities Yet</h3>
+                    <p className="text-gray-500">
+                      Opportunities will appear here once they are created during issue resolution processes.
+                    </p>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
           </div>
         </DialogContent>
       </Dialog>
