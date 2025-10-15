@@ -3753,10 +3753,12 @@ Dr. Williams: Thank you. That helps.
                           </div>
                         </button>
 
-                        {/* Vertical connector below header */}
-                        <div className="flex justify-center">
-                          <div className="h-6 w-1 rounded-full bg-gradient-to-b from-indigo-300 to-indigo-500" />
-                        </div>
+                        {/* Vertical connector below header - only show when expanded */}
+                        {expandedNodes.has(categoryKey) && (
+                          <div className="flex justify-center">
+                            <div className="h-6 w-1 rounded-full bg-gradient-to-b from-indigo-300 to-indigo-500" />
+                          </div>
+                        )}
 
                         {/* Issues List (collapsible) */}
                         {expandedNodes.has(categoryKey) && (
